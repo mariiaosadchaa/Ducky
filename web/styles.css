@@ -1,11 +1,16 @@
 :root {
-  --bg:#0b1220; --fg:#efe6d2; --mute:#a9a291; --gold:#d9bf8c; --line:#2a2f3d; --card:#111a2c;
+  --bg:#0b1220; --fg:#efe6d2; --mute:#a9a291; --gold:#d9bf8c; --line:#2a2f3d; --card:rgba(17,26,44,.72);
   --btn-bg:#d9bf8c; --btn-fg:#0b1220; --danger:#e7a08f;
+  --blob1:rgba(217,191,140,.26); --blob2:rgba(60,96,180,.38); --blob3:rgba(130,80,170,.20);
+  --spark:217,191,140; --spot:rgba(217,191,140,.16); --glow:rgba(217,191,140,.35); --ease:cubic-bezier(.22,1,.36,1);
   --serif:'Cormorant Garamond',Georgia,serif; --sans:'Jost',system-ui,sans-serif;
 }
+/* світла тема: «Перлина»: холодний білий, темно-синій текст, шампанське золото */
 :root[data-theme="light"] {
-  --bg:#f7f1e3; --fg:#0b1220; --mute:#55596a; --gold:#7d5e25; --line:#ddd2b8; --card:#fffaf0;
-  --btn-bg:#0b1220; --btn-fg:#f7f1e3; --danger:#9b3d2c;
+  --bg:#f4f6fb; --fg:#0b1220; --mute:#586277; --gold:#8a6420; --line:#dbe1ee; --card:rgba(255,255,255,.78);
+  --btn-bg:#0b1220; --btn-fg:#f4f6fb; --danger:#b3412d;
+  --blob1:rgba(226,190,110,.5); --blob2:rgba(140,172,240,.5); --blob3:rgba(244,170,195,.3);
+  --spark:176,132,40; --spot:rgba(201,162,75,.20); --glow:rgba(138,100,32,.35);
 }
 * { box-sizing:border-box; }
 body { margin:0; background:var(--bg); color:var(--fg); font-family:var(--sans); font-weight:300; font-size:16px; line-height:1.5; }
@@ -66,3 +71,87 @@ button.wide { width:100%; padding:14px 18px; }
 .or { text-align:center; color:var(--mute); font-size:12px; letter-spacing:.2em; text-transform:uppercase; margin:18px 0; }
 .sync { color:var(--mute); font-size:13px; }
 .sync.warn { color:var(--danger); }
+
+/* ================= АНІМАЦІЇ ================= */
+:root { --ease:cubic-bezier(.22,1,.36,1); }
+header.top, main { position:relative; z-index:1; }
+.bg { position:fixed; inset:0; z-index:0; overflow:hidden; pointer-events:none; }
+.bg i { position:absolute; width:52vmax; height:52vmax; border-radius:50%; filter:blur(90px); animation:drift 28s ease-in-out infinite alternate; will-change:transform; }
+.bg i:nth-child(1) { background:var(--blob1); left:-12vmax; top:-16vmax; }
+.bg i:nth-child(2) { background:var(--blob2); right:-18vmax; top:10vh; animation-duration:34s; animation-delay:-9s; }
+.bg i:nth-child(3) { background:var(--blob3); left:18vw; bottom:-26vmax; animation-duration:40s; animation-delay:-16s; }
+@keyframes drift { 0%{transform:translate3d(0,0,0) scale(1)} 50%{transform:translate3d(6vmax,4vmax,0) scale(1.12)} 100%{transform:translate3d(-5vmax,7vmax,0) scale(.94)} }
+#sparks { position:fixed; inset:0; z-index:0; pointer-events:none; }
+
+/* поява елементів */
+.reveal { animation:rise .85s var(--ease) backwards; animation-delay:calc(var(--i,0) * 70ms + 80ms); }
+@keyframes rise { from { opacity:0; transform:translateY(28px) scale(.985); filter:blur(6px); } }
+.w { display:inline-block; animation:wordIn 1s var(--ease) backwards; animation-delay:calc(var(--wi,0) * 90ms + 120ms); }
+@keyframes wordIn { from { opacity:0; transform:translateY(60%) rotate(4deg); filter:blur(14px); } }
+
+/* логотип */
+.brand svg { animation:bob 4.5s ease-in-out infinite; transform-origin:50% 80%; }
+@keyframes bob { 0%,100%{transform:translateY(0) rotate(-3deg)} 50%{transform:translateY(-3px) rotate(3deg)} }
+
+/* емблема на екрані входу */
+.auth-emblem { width:132px; height:132px; margin:0 0 8px; color:var(--gold); filter:drop-shadow(0 8px 24px var(--glow)); animation:bob 5s ease-in-out infinite; }
+.auth-emblem svg { width:100%; height:100%; overflow:visible; }
+.auth-emblem .ring { stroke-dasharray:1; stroke-dashoffset:1; animation:draw 2.2s var(--ease) .2s forwards; }
+.auth-emblem .duck { stroke-dasharray:1; stroke-dashoffset:1; animation:draw 1.8s var(--ease) .9s forwards; }
+.auth-emblem .eye { opacity:0; animation:fadein .5s ease 2.2s forwards; }
+.auth-emblem .wave { stroke-dasharray:3 2; opacity:.6; animation:flow 3s linear infinite; }
+.auth-emblem .wave.b { animation-duration:4.5s; animation-direction:reverse; opacity:.35; }
+@keyframes draw { to { stroke-dashoffset:0; } }
+@keyframes fadein { to { opacity:1; } }
+@keyframes flow { to { stroke-dashoffset:-50; } }
+
+/* скло, підсвітка під курсором, нахил */
+.card { position:relative; overflow:hidden; backdrop-filter:blur(14px) saturate(1.2); -webkit-backdrop-filter:blur(14px) saturate(1.2);
+  transition:border-color .4s, box-shadow .5s var(--ease), transform .5s var(--ease); }
+.card > * { position:relative; z-index:1; }
+.card::before { content:""; position:absolute; inset:0; z-index:0; pointer-events:none; opacity:0; transition:opacity .4s;
+  background:radial-gradient(280px circle at var(--mx,50%) var(--my,50%), var(--spot), transparent 70%); }
+.card:hover::before { opacity:1; }
+.card:hover { border-color:var(--gold); box-shadow:0 24px 60px -28px var(--glow); }
+.cards .card { transform:perspective(900px) rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg)) translateZ(0); }
+.cards .card:hover { transform:perspective(900px) rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg)) translateY(-6px); }
+
+/* кнопки: блиск */
+button.primary, button.ghost { position:relative; overflow:hidden; transition:transform .35s var(--ease), box-shadow .35s var(--ease), background .3s, color .3s; }
+button.primary::after { content:""; position:absolute; top:0; bottom:0; left:-60%; width:40%; transform:skewX(-20deg); background:linear-gradient(90deg,transparent,rgba(255,255,255,.55),transparent); }
+button.primary:hover { transform:translateY(-2px); box-shadow:0 14px 34px -12px var(--glow); }
+button.primary:hover::after { animation:shine .9s var(--ease); }
+button.primary:active, button.ghost:active { transform:translateY(0) scale(.97); }
+button.ghost:hover { background:var(--gold); color:var(--bg); transform:translateY(-2px); }
+@keyframes shine { to { left:130%; } }
+
+/* поля */
+input, select, textarea { transition:border-color .3s, box-shadow .4s var(--ease), background .3s; }
+input:focus, select:focus, textarea:focus { outline:none; border-color:var(--gold); box-shadow:0 0 0 4px var(--spot), 0 8px 24px -12px var(--glow); }
+tr td { transition:background .3s; }
+tr:hover td { background:var(--spot); }
+
+/* рухомий індикатор навігації */
+nav { position:relative; }
+nav button { transition:color .3s; }
+nav button:hover { color:var(--gold); }
+.ink { position:absolute; bottom:-1px; height:2px; background:var(--gold); box-shadow:0 0 14px var(--glow); border-radius:2px; transition:left .6s var(--ease), width .6s var(--ease); pointer-events:none; }
+nav button[aria-current="page"] { border-bottom-color:transparent; }
+
+/* хвилі при натисканні */
+.ripple { position:fixed; z-index:50; pointer-events:none; width:0; height:0; }
+.ripple i { position:absolute; left:0; top:0; border:1.5px solid var(--gold); border-radius:50%; transform:translate(-50%,-50%) scale(0); width:120px; height:120px; opacity:.8; animation:ring 1.3s var(--ease) forwards; }
+.ripple i:nth-child(2) { animation-delay:.14s; }
+.ripple i:nth-child(3) { animation-delay:.28s; }
+@keyframes ring { to { transform:translate(-50%,-50%) scale(2.6); opacity:0; } }
+
+/* перемикання теми: круг від кнопки */
+::view-transition-old(root), ::view-transition-new(root) { animation:none; mix-blend-mode:normal; }
+::view-transition-old(root) { z-index:1; }
+::view-transition-new(root) { z-index:2; }
+
+.total { display:inline-block; font-variant-numeric:tabular-nums; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration:.01ms !important; animation-delay:0s !important; animation-iteration-count:1 !important; transition-duration:.01ms !important; }
+  #sparks { display:none; }
+}

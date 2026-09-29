@@ -370,6 +370,17 @@ function viewStores() {
 
 const VIEWS = { pantry: viewPantry, scan: viewScan, recipes: viewRecipes, menu: viewMenu, stores: viewStores };
 
+function emblem() {
+  const d = h('div', { class: 'auth-emblem', 'aria-hidden': 'true' });
+  d.innerHTML = '<svg viewBox="0 0 36 36" fill="none" stroke="currentColor" stroke-width="0.9" stroke-linecap="round">'
+    + '<circle class="ring" pathLength="1" cx="18" cy="18" r="16.5"/>'
+    + '<path class="duck" pathLength="1" d="M11 22c0-5 3-9 8-9 3 0 5 2 5 4.5 0 1.5-.8 2.5-2 3M24 17l4 1-4 2M11 22c2 4 8 5 12 2"/>'
+    + '<circle class="eye" cx="21" cy="15" r="0.8" fill="currentColor" stroke="none"/>'
+    + '<path class="wave" d="M6 28q3-2 6 0t6 0t6 0t6 0" stroke-width="0.7"/>'
+    + '<path class="wave b" d="M8 31q3-2 6 0t6 0t6 0" stroke-width="0.6"/></svg>';
+  return d;
+}
+
 function viewAuthRemote() {
   if (authMode === 'recovery') {
     const msg = h('p', { class: 'form-error', role: 'alert' });
@@ -421,6 +432,7 @@ function viewAuthRemote() {
       if (error) msg.textContent = authError(error.message); else info.textContent = 'Якщо така пошта є, ми надіслали лист для відновлення.';
     } }, 'Забули пароль?'));
   return [h('div', { class: 'auth' },
+    emblem(),
     h('div', { class: 'eyebrow' }, isReg ? 'Ласкаво просимо' : 'З поверненням'),
     h('h1', {}, isReg ? 'Створіть свій' : 'Увійдіть у свій', ' ', h('em', {}, 'ставок')),
     h('div', { class: 'card' },
@@ -456,6 +468,7 @@ function viewAuth() {
     msg,
     h('button', { class: 'primary', type: 'submit' }, isReg ? 'Створити обліковий запис' : 'Увійти'));
   return [h('div', { class: 'auth' },
+    emblem(),
     h('div', { class: 'eyebrow' }, isReg ? 'Ласкаво просимо' : 'З поверненням'),
     h('h1', {}, isReg ? 'Створіть свій' : 'Увійдіть у свій', ' ', h('em', {}, 'ставок')),
     h('div', { class: 'card' }, form),
@@ -465,18 +478,21 @@ function viewAuth() {
     h('p', { class: 'note' }, 'Обліковий запис зберігається лише в цьому браузері, на вашому пристрої. Відновити пароль неможливо.'))];
 }
 
+const fxDone = (key) => { if (window.DuckyFX) window.DuckyFX.afterRender(key); };
+
 function render() {
   const hasUser = !!user;
   $nav.hidden = !hasUser;
   $who.hidden = !hasUser;
   $logout.hidden = !hasUser;
   if (!hasUser && !authReady) { $view.replaceChildren(h('p', { class: 'empty' }, 'Завантаження…')); return; }
-  if (!hasUser) { $view.replaceChildren(...viewAuth()); return; }
+  if (!hasUser) { $view.replaceChildren(...viewAuth()); fxDone('auth-' + authMode); return; }
   $who.textContent = user.name;
   if (!VIEWS[state.tab]) state.tab = 'pantry';
   $nav.replaceChildren(...TABS.map(([k, t]) => h('button', { type: 'button', 'aria-current': k === state.tab ? 'page' : null,
     onclick: () => { state.tab = k; save(); render(); } }, t)));
   $view.replaceChildren(...VIEWS[state.tab]());
+  fxDone(state.tab);
 }
 
 function applyTheme() {
@@ -484,6 +500,7 @@ function applyTheme() {
   const dark = saved ? saved === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
   $theme.textContent = dark ? 'Світла тема' : 'Темна тема';
+  if (window.DuckyFX) window.DuckyFX.refreshColors();
 }
 
 const $nav = document.getElementById('nav');
@@ -493,8 +510,12 @@ const $who = document.getElementById('who');
 const $logout = document.getElementById('logoutBtn');
 const $sync = document.getElementById('sync');
 $theme.addEventListener('click', () => {
-  store.set(THEME_KEY, document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
-  applyTheme();
+  const go = () => {
+    store.set(THEME_KEY, document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
+    applyTheme();
+  };
+  const r = $theme.getBoundingClientRect();
+  if (window.DuckyFX) window.DuckyFX.themeTransition(go, r.left + r.width / 2, r.top + r.height / 2); else go();
 });
 $logout.addEventListener('click', logout);
 applyTheme();
