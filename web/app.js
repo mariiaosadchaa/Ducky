@@ -484,12 +484,17 @@ const VIEWS = { pantry: viewPantry, scan: viewScan, recipes: viewRecipes, menu: 
 
 function emblem() {
   const d = h('div', { class: 'auth-emblem', 'aria-hidden': 'true' });
-  d.innerHTML = '<svg viewBox="0 0 36 36" fill="none" stroke="currentColor" stroke-width="0.9" stroke-linecap="round">'
-    + '<circle class="ring" pathLength="1" cx="18" cy="18" r="16.5"/>'
-    + '<path class="duck" pathLength="1" d="M11 22c0-5 3-9 8-9 3 0 5 2 5 4.5 0 1.5-.8 2.5-2 3M24 17l4 1-4 2M11 22c2 4 8 5 12 2"/>'
-    + '<circle class="eye" cx="21" cy="15" r="0.8" fill="currentColor" stroke="none"/>'
-    + '<path class="wave" d="M6 28q3-2 6 0t6 0t6 0t6 0" stroke-width="0.7"/>'
-    + '<path class="wave b" d="M8 31q3-2 6 0t6 0t6 0" stroke-width="0.6"/></svg>';
+  const f = (k, pts, style) => '<polygon class="facet" style="--k:' + k + ';' + style + '" points="' + pts + '"/>';
+  d.innerHTML = '<svg viewBox="0 0 100 100">'
+    + '<g fill="none" stroke="currentColor" stroke-width="1.2"><ellipse class="rp" cx="50" cy="85" rx="30" ry="6"/><ellipse class="rp" style="animation-delay:1s" cx="50" cy="85" rx="30" ry="6"/><ellipse class="rp" style="animation-delay:2s" cx="50" cy="85" rx="30" ry="6"/></g>'
+    + f(0, '12,62 40,46 64,52 86,66 56,80 34,80', 'fill:var(--duck-body)')
+    + f(1, '50,52 58,30 76,34 70,52', 'fill:var(--duck-body)')
+    + f(2, '40,46 64,52 40,72', 'fill:#fff;opacity:.28')
+    + f(3, '12,62 40,72 34,80', 'fill:#000;opacity:.18')
+    + f(4, '40,72 56,80 34,80', 'fill:#000;opacity:.1')
+    + f(5, '58,30 76,34 64,44', 'fill:#fff;opacity:.3')
+    + f(6, '74,36 94,43 74,48', 'fill:var(--duck-beak)')
+    + '<circle class="eye" cx="67" cy="39" r="2.4" style="fill:var(--duck-eye)"/></svg>';
   return d;
 }
 

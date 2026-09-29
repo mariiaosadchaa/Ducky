@@ -2,7 +2,7 @@
   --bg:#0b1220; --fg:#efe6d2; --mute:#a9a291; --gold:#d9bf8c; --line:#2a2f3d; --card:rgba(17,26,44,.72);
   --btn-bg:#d9bf8c; --btn-fg:#0b1220; --danger:#e7a08f;
   --blob1:rgba(217,180,110,.2); --blob2:rgba(60,96,180,.38); --blob3:rgba(130,80,170,.20);
-  --gold-hi:#fff1cf; --spark:217,191,140; --spot:rgba(217,191,140,.16); --glow:rgba(217,191,140,.35); --ease:cubic-bezier(.22,1,.36,1);
+  --gold-hi:#fff1cf; --duck-body:#d9bf8c; --duck-beak:#efb74a; --duck-eye:#0b1220; --spark:217,191,140; --spot:rgba(217,191,140,.16); --glow:rgba(217,191,140,.35); --ease:cubic-bezier(.22,1,.36,1);
   --serif:'Cormorant Garamond',Georgia,serif; --sans:'Jost',system-ui,sans-serif;
 }
 /* світла тема: «Перлина»: холодний білий, темно-синій текст, шампанське золото */
@@ -10,7 +10,7 @@
   --bg:#f4f6fb; --fg:#0b1220; --mute:#586277; --gold:#8a6420; --line:#dbe1ee; --card:rgba(255,255,255,.78);
   --btn-bg:#0b1220; --btn-fg:#f4f6fb; --danger:#b3412d;
   --blob1:rgba(226,190,110,.5); --blob2:rgba(140,172,240,.5); --blob3:rgba(244,170,195,.3);
-  --gold-hi:#d6a63f; --spark:176,132,40; --spot:rgba(201,162,75,.20); --glow:rgba(138,100,32,.35);
+  --gold-hi:#d6a63f; --duck-body:#f7c948; --duck-beak:#f08a24; --duck-eye:#0b1220; --spark:176,132,40; --spot:rgba(201,162,75,.20); --glow:rgba(138,100,32,.35);
 }
 * { box-sizing:border-box; }
 body { min-height:100vh; display:flex; flex-direction:column; margin:0; background:var(--bg); color:var(--fg); font-family:var(--sans); font-weight:300; font-size:16px; line-height:1.5; }
@@ -207,3 +207,14 @@ button.primary:hover, button.ghost:hover { transform:translate(var(--tx,0px), ca
 @keyframes bubble { 0%{transform:translateY(0) scale(.6);opacity:0} 15%{opacity:.7} 100%{transform:translateY(-130px) translateX(14px) scale(1.25);opacity:0} }
 @media (max-width:900px) { .stat-n { font-size:36px; } .pond { height:130px; } }
 @media (prefers-reduced-motion: reduce) { .pond .wave, .swimmer { animation:none !important; } .cursor-glow { display:none; } }
+.pond .wave { -webkit-mask-image:linear-gradient(to bottom,#000 10%,transparent 92%); mask-image:linear-gradient(to bottom,#000 10%,transparent 92%); }
+.pond .w1 { opacity:.42; } .pond .w2 { opacity:.28; } .pond .w3 { opacity:.2; }
+
+/* логотип: оріґамі-качка */
+.brand svg { filter:drop-shadow(0 3px 6px rgba(0,0,0,.18)); }
+.auth-emblem .facet { animation:facetIn .8s var(--ease) backwards; animation-delay:calc(var(--k) * 110ms + 250ms); transform-box:fill-box; transform-origin:center; }
+@keyframes facetIn { from { opacity:0; transform:translate(-8px,-14px) scale(.6) rotate(-8deg); } }
+.auth-emblem .eye { animation:fadein .5s ease 1.3s backwards; }
+.auth-emblem .rp { transform-box:fill-box; transform-origin:center; animation:ripple 3s ease-out infinite; opacity:0; }
+@keyframes ripple { 0% { transform:scale(.35); opacity:.85; } 100% { transform:scale(1.5); opacity:0; } }
+.swimmer { width:60px; }
