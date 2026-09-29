@@ -218,3 +218,43 @@ button.primary:hover, button.ghost:hover { transform:translate(var(--tx,0px), ca
 .auth-emblem .rp { transform-box:fill-box; transform-origin:center; animation:ripple 3s ease-out infinite; opacity:0; }
 @keyframes ripple { 0% { transform:scale(.35); opacity:.85; } 100% { transform:scale(1.5); opacity:0; } }
 .swimmer { width:60px; }
+.brand svg { width:54px; height:54px; margin:-8px -4px -8px 0; }
+
+/* ===== v3: профіль, графіки, штрихкод, модальні вікна, PWA ===== */
+nav { gap:22px; }
+select.scope { width:auto; max-width:190px; padding:9px 10px; font-size:13px; }
+label.check { flex-direction:row; align-items:center; gap:10px; text-transform:none; letter-spacing:0; font-size:15px; color:var(--fg); font-weight:300; cursor:pointer; }
+input[type="checkbox"] { width:auto; accent-color:var(--gold); margin:0; }
+.checks { display:flex; flex-wrap:wrap; gap:8px 24px; }
+.toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:12px 24px; }
+.photo-block { margin-bottom:20px; padding-bottom:20px; border-bottom:1px solid var(--line); }
+details.steps { margin:6px 0; font-size:15px; }
+details.steps summary { cursor:pointer; color:var(--gold); }
+details.steps ol { margin:8px 0 0; padding-left:20px; color:var(--mute); }
+.modal-ov { position:fixed; inset:0; z-index:50; background:rgba(5,8,16,.62); backdrop-filter:blur(6px); display:flex; align-items:center; justify-content:center; padding:20px; animation:fadeIn .25s var(--ease); }
+.modal { width:min(520px,100%); max-height:90vh; overflow:auto; background:var(--bg); animation:popIn .45s var(--ease); }
+.modal-h { display:flex; justify-content:space-between; align-items:baseline; gap:12px; }
+.scan-video { width:100%; max-height:300px; background:#000; object-fit:cover; margin-bottom:8px; }
+@keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
+@keyframes popIn { from { opacity:0; transform:translateY(16px) scale(.97); } to { opacity:1; transform:none; } }
+.ring { width:170px; height:170px; display:block; margin:0 auto; }
+.ring-bg { fill:none; stroke:var(--line); stroke-width:10; }
+.ring-fg { fill:none; stroke:var(--gold); stroke-width:10; stroke-linecap:round; transition:stroke-dashoffset 1.2s var(--ease); animation:ringIn 1.4s var(--ease) both; }
+.ring-fg.over { stroke:var(--danger); }
+.ring-n { font:400 30px var(--serif); fill:var(--fg); }
+.ring-l { font:400 9px var(--sans); letter-spacing:.2em; text-transform:uppercase; fill:var(--mute); }
+@keyframes ringIn { from { stroke-dashoffset:340; } }
+.bars { width:100%; height:auto; display:block; }
+.bar { fill:var(--gold); opacity:.9; transform-box:fill-box; transform-origin:bottom; animation:barUp .9s var(--ease) both; animation-delay:calc(var(--i) * 70ms); }
+.bar.over { fill:var(--danger); }
+@keyframes barUp { from { transform:scaleY(0); } }
+.bar-l { font:400 10px var(--sans); fill:var(--mute); }
+.bar-v { font:400 10px var(--sans); fill:var(--fg); }
+.bud-line { stroke:var(--danger); stroke-width:1; stroke-dasharray:5 4; }
+.bud-l { font:400 10px var(--sans); fill:var(--danger); }
+.hbar { display:grid; grid-template-columns:minmax(90px,160px) 1fr auto; gap:14px; align-items:center; padding:6px 0; }
+.hb-t { height:8px; background:var(--line); display:block; }
+.hb-f { display:block; height:100%; background:var(--gold); transform-origin:left; animation:hbIn 1s var(--ease) both; animation-delay:calc(var(--i) * 80ms); }
+@keyframes hbIn { from { transform:scaleX(0); } }
+@media (prefers-reduced-motion:reduce) { .bar, .hb-f, .ring-fg, .modal, .modal-ov { animation:none; } }
+@media (max-width:900px) { select.scope { max-width:140px; } nav { gap:16px; } .hbar { grid-template-columns:90px 1fr auto; } }

@@ -12,8 +12,9 @@ const APPLIANCES = ['', 'Мультиварка', 'Духовка', 'Хлібо�
 const USERS_KEY = 'ducky.users';
 const SESSION_KEY = 'ducky.session';
 const THEME_KEY = 'ducky.theme';
+const SCOPE_KEY = 'ducky.scope.';
 
-const defaults = () => ({ products: [], receipts: [], recipes: [], menu: {}, budget: '', tab: 'pantry' });
+const defaults = () => ({ products: [], receipts: [], recipes: [], menu: {}, budget: '', tab: 'pantry', profile: {}, notified: {} });
 let state = null;      // дані поточного користувача
 let user = null;       // { id, name, email }
 let authMode = 'register';
@@ -23,8 +24,8 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* пам'ять: ігноруємо */ } },
   del(k) { try { localStorage.removeItem(k); } catch (e) { /* ігноруємо */ } },
 };
-function loadState(userId) {
-  const s = store.get(KEY + '.' + userId);
+function loadState(id) {
+  const s = store.get(KEY + '.' + id);
   return s && typeof s === 'object' ? { ...defaults(), ...s } : defaults();
 }
 // ---------- Supabase (той самий проєкт, що й у Rivna app) ----------
@@ -40,9 +41,16 @@ function setSync(text, bad) {
   $sync.textContent = text || '';
   $sync.className = 'sync' + (bad ? ' warn' : '');
 }
+// scope: 'me' = особиста комора, інакше id спільного домогосподарства (сімейна комора)
+let scope = 'me';
+let memberships = [];      // [{ id, name }] домогосподарства з Rivna app, де користувач є учасником
+let channel = null;        // realtime-підписка на спільну комору
+let pendingRemote = false; // прийшли зміни від іншого учасника, поки користувач друкував
+const cacheId = () => (scope === 'me' ? user.id : 'h.' + scope);
+function saveLocal() { if (state && user) store.set(KEY + '.' + cacheId(), state); }
 function save() {
   if (!state || !user) return;
-  store.set(KEY + '.' + user.id, state);
+  saveLocal();
   if (remote && remoteReady) {
     clearTimeout(syncTimer);
     setSync('Зберігаємо…');
@@ -51,22 +59,91 @@ function save() {
 }
 async function pushRemote() {
   if (!remote || !user || !remoteReady) return;
-  const { error } = await sb.from('ducky_data').upsert({ user_id: user.id, data: state, updated_at: new Date().toISOString() });
+  const at = new Date().toISOString();
+  const { error } = scope === 'me'
+    ? await sb.from('ducky_data').upsert({ user_id: user.id, data: state, updated_at: at })
+    : await sb.from('ducky_household_data').upsert({ household_id: scope, data: state, updated_at: at, updated_by: user.id });
   setSync(error ? 'Не вдалося зберегти' : 'Збережено', !!error);
+}
+async function loadMemberships() {
+  memberships = [];
+  try {
+    const mem = await sb.from('household_members').select('household_id').eq('user_id', user.id);
+    if (mem.error || !mem.data || !mem.data.length) return;
+    const ids = [...new Set(mem.data.map((m) => m.household_id))];
+    const hh = await sb.from('households').select('id, name').in('id', ids);
+    const names = new Map((hh.data || []).map((x) => [x.id, x.name]));
+    memberships = ids.map((id) => ({ id, name: names.get(id) || 'Сім\'я' }));
+  } catch (e) { memberships = []; }
+}
+// завантажує дані поточного scope; true, якщо вдалося
+async function loadScopeData() {
+  const { data, error } = scope === 'me'
+    ? await sb.from('ducky_data').select('data').eq('user_id', user.id).maybeSingle()
+    : await sb.from('ducky_household_data').select('data').eq('household_id', scope).maybeSingle();
+  if (error) return false;
+  remoteReady = true;
+  if (data && data.data && typeof data.data === 'object') { state = { ...defaults(), ...data.data }; setSync('Синхронізовано'); }
+  else await pushRemote();              // першe використання: завантажуємо локальний кеш у базу
+  return true;
+}
+function unsubscribeRealtime() {
+  if (channel && sb) { try { sb.removeChannel(channel); } catch (e) { /* ігноруємо */ } }
+  channel = null;
+}
+function subscribeRealtime() {
+  unsubscribeRealtime();
+  if (scope === 'me' || !sb.channel) return;
+  const hid = scope;
+  try {
+    channel = sb.channel('ducky-h-' + hid)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ducky_household_data', filter: 'household_id=eq.' + hid }, (p) => {
+        const row = p && p.new;
+        if (!row || !row.data || scope !== hid || row.updated_by === user.id) return;
+        state = { ...defaults(), ...row.data, tab: state.tab };
+        saveLocal(); setSync('Оновлено іншим учасником');
+        const a = document.activeElement;
+        if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) pendingRemote = true; else render();
+      })
+      .subscribe();
+  } catch (e) { channel = null; }
+}
+document.addEventListener('focusout', () => { if (pendingRemote) { pendingRemote = false; setTimeout(render, 0); } });
+
+async function switchScope(next) {
+  if (!user || next === scope) return;
+  clearTimeout(syncTimer);
+  if (remoteReady) await pushRemote();
+  unsubscribeRealtime();
+  scope = next; remoteReady = false;
+  store.set(SCOPE_KEY + user.id, scope);
+  state = loadState(cacheId());
+  render();
+  if (!(await loadScopeData())) {
+    if (scope !== 'me') { scope = 'me'; store.set(SCOPE_KEY + user.id, scope); state = loadState(cacheId()); await loadScopeData(); setSync('Спільна комора недоступна. Перевірте SQL з docs/supabase.sql', true); }
+    else setSync('Не вдалося завантажити дані', true);
+  }
+  subscribeRealtime();
+  render();
 }
 async function enterRemote(sbUser) {
   if (user && user.id === sbUser.id) return;
   const meta = sbUser.user_metadata || {};
   user = { id: sbUser.id, name: meta.full_name || meta.name || (sbUser.email || '').split('@')[0], email: sbUser.email };
-  state = loadState(user.id);           // локальний кеш, поки вантажимо
+  scope = store.get(SCOPE_KEY + user.id) || 'me';
+  state = loadState(cacheId());         // локальний кеш, поки вантажимо
   remoteReady = false;
   store.set('ducky.seen', 1);
   render();
-  const { data, error } = await sb.from('ducky_data').select('data').eq('user_id', user.id).maybeSingle();
-  if (error) { setSync('Не вдалося завантажити дані', true); return; }
-  remoteReady = true;
-  if (data && data.data && typeof data.data === 'object') { state = { ...defaults(), ...data.data }; setSync('Синхронізовано'); }
-  else await pushRemote();              // перший вхід: завантажуємо локальний кеш у базу
+  await loadMemberships();
+  if (scope !== 'me' && !memberships.some((m) => m.id === scope)) { scope = 'me'; state = loadState(cacheId()); }
+  let ok = await loadScopeData();
+  if (!ok && scope !== 'me') {
+    scope = 'me'; state = loadState(cacheId()); ok = await loadScopeData();
+    if (ok) setSync('Спільна комора недоступна. Перевірте SQL з docs/supabase.sql', true);
+  }
+  if (!ok) { setSync('Не вдалося завантажити дані', true); render(); return; }
+  subscribeRealtime();
   await loadRivnaBudget();
   render();
 }
@@ -120,7 +197,8 @@ async function loadRivnaBudget() {
 }
 function rivnaCurrent() {
   if (!rivna) return null;
-  return rivna.options.find((o) => o.id === state.rivnaHousehold) || rivna.options[0];
+  const want = scope !== 'me' ? scope : state.rivnaHousehold;
+  return rivna.options.find((o) => o.id === want) || rivna.options[0];
 }
 function effectiveBudget() {
   const r = rivnaCurrent();
@@ -389,6 +467,7 @@ function viewRecipes() {
         h('div', { class: 'kv' }, h('span', { class: 'mute' }, 'Є вдома'), h('span', {}, got + ' з ' + r.ings.length)),
         h('div', { class: 'kv' }, h('span', { class: 'mute' }, 'Докупити'), h('span', {}, buy.length ? buy.join(', ') : 'нічого')),
         h('div', { class: 'kv' }, h('span', { class: 'mute' }, 'Вартість докупівлі'), h('span', { class: 'gold-t' }, buy.length ? cost : '0 ₴')),
+        r.steps && r.steps.length ? h('details', { class: 'steps' }, h('summary', {}, 'Приготування'), h('ol', {}, r.steps.map((t) => h('li', {}, t)))) : null,
         h('button', { class: 'link', type: 'button', onclick: () => { state.recipes = state.recipes.filter((x) => x.id !== r.id); save(); render(); } }, 'Видалити'));
     }))
     : h('p', { class: 'empty' }, 'Додайте перший рецепт. Ducky покаже, що з нього вже є вдома, а що докупити.');
@@ -605,9 +684,10 @@ function render() {
   if (!hasUser && !authReady) { $view.replaceChildren(h('p', { class: 'empty' }, 'Завантаження…')); return; }
   if (!hasUser) { $view.replaceChildren(...viewAuth()); fxDone('auth-' + authMode); return; }
   $who.textContent = user.name;
+  drawScope();
   if (!VIEWS[state.tab]) state.tab = 'pantry';
   $nav.replaceChildren(...TABS.map(([k, t]) => h('button', { type: 'button', 'aria-current': k === state.tab ? 'page' : null,
-    onclick: () => { state.tab = k; save(); render(); } }, t)));
+    onclick: () => { state.tab = k; saveLocal(); render(); } }, t)));
   $view.replaceChildren(...VIEWS[state.tab]());
   fxDone(state.tab);
 }
@@ -626,6 +706,20 @@ const $theme = document.getElementById('themeBtn');
 const $who = document.getElementById('who');
 const $logout = document.getElementById('logoutBtn');
 const $sync = document.getElementById('sync');
+const $scope = document.getElementById('scopeSel');
+let scopeSig = '';
+function drawScope() {
+  const show = !!(user && remote && memberships.length);
+  $scope.hidden = !show;
+  if (!show) { scopeSig = ''; return; }
+  const sig = scope + '|' + memberships.map((m) => m.id + m.name).join(',');
+  if (sig === scopeSig) return;
+  scopeSig = sig;
+  $scope.replaceChildren(h('option', { value: 'me' }, 'Моя комора'),
+    ...memberships.map((m) => h('option', { value: m.id }, 'Сім\'я: ' + m.name)));
+  $scope.value = scope;
+}
+$scope.addEventListener('change', () => switchScope($scope.value));
 $theme.addEventListener('click', () => {
   const go = () => {
     store.set(THEME_KEY, document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
@@ -647,6 +741,7 @@ applyTheme();
       if (session && session.user && event !== 'PASSWORD_RECOVERY') {
         setTimeout(() => enterRemote(session.user), 0);   // не викликаємо supabase усередині колбека
       } else if (!session) {
+        unsubscribeRealtime(); memberships = []; scope = 'me';
         user = null; state = null; remoteReady = false; rivna = null; setSync('');
         if (event === 'SIGNED_OUT') authMode = 'login';
         render();
