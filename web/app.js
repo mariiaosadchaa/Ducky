@@ -231,6 +231,29 @@ function lastKnownPrice(name, prices) {
 }
 const pantryNames = () => new Set(state.products.map((p) => norm(p.name)));
 
+
+// ---------- спільні блоки ----------
+const fmtNum = (v) => v.toLocaleString('uk-UA', { maximumFractionDigits: 2 });
+function statsRow(items) {
+  return h('div', { class: 'stats' }, items.map(([label, value, suffix]) =>
+    h('div', { class: 'card stat' },
+      h('div', { class: 'stat-n', 'data-count': value, 'data-suffix': suffix || '' }, fmtNum(value) + (suffix || '')),
+      h('div', { class: 'stat-l' }, label))));
+}
+const receiptSum = (r) => r.items.reduce((s, i) => s + (i.price || 0), 0);
+function spent30() {
+  const from = new Date(); from.setDate(from.getDate() - 30);
+  const f = localISO(from);
+  return state.receipts.filter((r) => (r.date || '') >= f).reduce((s, r) => s + receiptSum(r), 0);
+}
+function recentCard() {
+  const list = [...state.receipts].sort((a, b) => (b.date || '').localeCompare(a.date || '')).slice(0, 4);
+  return h('div', { class: 'card' }, h('h2', {}, 'Останні чеки'),
+    list.length
+      ? list.map((r) => h('div', { class: 'kv row-line' }, h('span', {}, r.store + ' · ' + fmtDate(r.date)), h('span', { class: 'gold-t' }, money(receiptSum(r)))))
+      : h('p', { class: 'empty' }, 'Ще немає чеків. Додайте перший на вкладці «Скан чека».'));
+}
+
 // ---------- екрани ----------
 function header(eyebrow, title, emphasis) {
   return [
@@ -280,7 +303,10 @@ function viewPantry() {
         h('span', { class: 'warn' }, daysLeft(p.exp) < 0 ? 'прострочено' : fmtDate(p.exp))))
       : h('p', { class: 'empty' }, 'Нічого, що псується найближчі 3 дні.'));
 
-  return [...header('Ставок запасів', 'Що вдома', 'сьогодні'), h('div', { class: 'card' }, form, table), h('div', { style: 'height:24px' }), side];
+  const stats = statsRow([['Продуктів у коморі', state.products.length], ['Скоро зіпсуються', soon.length],
+    ['Чеків збережено', state.receipts.length], ['Витрачено за 30 днів', Math.round(spent30()), ' ₴']]);
+  return [...header('Ставок запасів', 'Що вдома', 'сьогодні'), stats,
+    h('div', { class: 'grid' }, h('div', { class: 'card' }, form, table), h('div', { class: 'stack' }, side, recentCard()))];
 }
 
 let draft = { store: '', date: todayISO(), lines: [{ name: '', qty: '', price: '', exp: '' }] };
@@ -324,7 +350,9 @@ function viewScan() {
     } }, 'Додати в комору'),
     msg,
     h('p', { class: 'note' }, 'Автоматичне розпізнавання фото чека буде пізніше. Поки що позиції вводяться вручну.'));
-  return [...header('Скан чека', 'Чек у', 'комору'), form];
+  const tip = h('div', { class: 'card gold' }, h('h2', {}, 'Порада'),
+    h('p', { class: 'mute' }, 'Вписуйте ціну за упаковку: так Ducky зможе порівняти магазини. Дату придатності вказуйте для продуктів, що швидко псуються.'));
+  return [...header('Скан чека', 'Чек у', 'комору'), h('div', { class: 'grid' }, form, h('div', { class: 'stack' }, recentCard(), tip))];
 }
 
 function viewRecipes() {
@@ -364,7 +392,11 @@ function viewRecipes() {
         h('button', { class: 'link', type: 'button', onclick: () => { state.recipes = state.recipes.filter((x) => x.id !== r.id); save(); render(); } }, 'Видалити'));
     }))
     : h('p', { class: 'empty' }, 'Додайте перший рецепт. Ducky покаже, що з нього вже є вдома, а що докупити.');
-  return [...header('Рецепти', 'З того, що', 'є вдома'), h('div', { class: 'card' }, form), h('div', { style: 'height:24px' }), cards];
+  const ready = list.filter((x) => !x.buy.length).length;
+  const stats = statsRow([['Рецептів', state.recipes.length], ['Можна готувати зараз', ready], ['Продуктів у коморі', state.products.length]]);
+  return [...header('Рецепти', 'З того, що', 'є вдома'), stats,
+    h('div', { class: 'grid', style: 'grid-template-columns:minmax(0,1fr) minmax(0,2fr)' },
+      h('div', { class: 'card' }, h('h2', {}, 'Новий рецепт'), form), cards)];
 }
 
 function viewMenu() {
@@ -421,7 +453,7 @@ function viewMenu() {
   }
   drawBudget();
   return [...header('Меню на тиждень', 'Сім днів', 'без хаосу'), budgetBox, dl,
-    h('div', { class: 'grid' }, h('div', { class: 'card' }, table), shopBox)];
+    h('div', { class: 'grid', style: 'grid-template-columns:minmax(0,2fr) minmax(260px,1fr)' }, h('div', { class: 'card' }, table), shopBox)];
 }
 
 function viewStores() {
@@ -442,7 +474,9 @@ function viewStores() {
           h('td', { class: 'gold-t' }, best ? best[0] : 'мало даних'));
       })));
   }
-  return [...header('Аналіз цін', 'Де купувати', 'вигідніше'), h('div', { class: 'card' }, body),
+  const compared = names.filter((n) => Object.keys(prices[n]).length > 1).length;
+  const stats = statsRow([['Чеків', state.receipts.length], ['Магазинів', stores.length], ['Товарів у порівнянні', compared]]);
+  return [...header('Аналіз цін', 'Де купувати', 'вигідніше'), stats, h('div', { class: 'card' }, body),
     h('p', { class: 'note' }, 'Порівняння лише за вашими чеками, за останньою ціною. Порівнюйте однакові упаковки.')];
 }
 

@@ -2,7 +2,7 @@
   --bg:#0b1220; --fg:#efe6d2; --mute:#a9a291; --gold:#d9bf8c; --line:#2a2f3d; --card:rgba(17,26,44,.72);
   --btn-bg:#d9bf8c; --btn-fg:#0b1220; --danger:#e7a08f;
   --blob1:rgba(217,180,110,.2); --blob2:rgba(60,96,180,.38); --blob3:rgba(130,80,170,.20);
-  --spark:217,191,140; --spot:rgba(217,191,140,.16); --glow:rgba(217,191,140,.35); --ease:cubic-bezier(.22,1,.36,1);
+  --gold-hi:#fff1cf; --spark:217,191,140; --spot:rgba(217,191,140,.16); --glow:rgba(217,191,140,.35); --ease:cubic-bezier(.22,1,.36,1);
   --serif:'Cormorant Garamond',Georgia,serif; --sans:'Jost',system-ui,sans-serif;
 }
 /* світла тема: «Перлина»: холодний білий, темно-синій текст, шампанське золото */
@@ -10,17 +10,17 @@
   --bg:#f4f6fb; --fg:#0b1220; --mute:#586277; --gold:#8a6420; --line:#dbe1ee; --card:rgba(255,255,255,.78);
   --btn-bg:#0b1220; --btn-fg:#f4f6fb; --danger:#b3412d;
   --blob1:rgba(226,190,110,.5); --blob2:rgba(140,172,240,.5); --blob3:rgba(244,170,195,.3);
-  --spark:176,132,40; --spot:rgba(201,162,75,.20); --glow:rgba(138,100,32,.35);
+  --gold-hi:#d6a63f; --spark:176,132,40; --spot:rgba(201,162,75,.20); --glow:rgba(138,100,32,.35);
 }
 * { box-sizing:border-box; }
-body { margin:0; background:var(--bg); color:var(--fg); font-family:var(--sans); font-weight:300; font-size:16px; line-height:1.5; }
+body { min-height:100vh; display:flex; flex-direction:column; margin:0; background:var(--bg); color:var(--fg); font-family:var(--sans); font-weight:300; font-size:16px; line-height:1.5; }
 .top { display:flex; align-items:center; justify-content:space-between; gap:24px; padding:28px 80px; flex-wrap:wrap; }
 .brand { display:flex; align-items:center; gap:12px; color:var(--gold); }
 .brand span { font-family:var(--serif); font-size:28px; letter-spacing:.08em; font-weight:500; color:var(--fg); }
 nav { display:flex; gap:32px; flex-wrap:wrap; }
 nav button { background:none; border:0; border-bottom:1px solid transparent; color:var(--fg); font:400 12px var(--sans); letter-spacing:.2em; text-transform:uppercase; padding:6px 0; cursor:pointer; }
 nav button[aria-current="page"] { color:var(--gold); border-bottom-color:var(--gold); }
-main { padding:8px 80px 80px; max-width:1280px; margin:0 auto; }
+main { padding:8px 80px 24px; max-width:1280px; margin:0 auto; width:100%; flex:1; }
 .eyebrow { font-size:12px; letter-spacing:.34em; text-transform:uppercase; color:var(--gold); font-weight:400; }
 h1 { font:400 clamp(40px,6vw,64px)/1.05 var(--serif); margin:8px 0 28px; }
 h1 em { color:var(--gold); }
@@ -53,7 +53,7 @@ td.name { font:400 22px var(--serif); }
 .lines { display:grid; gap:10px; margin-bottom:16px; }
 .line { display:grid; grid-template-columns:2fr 1fr 1fr 1fr auto; gap:10px; align-items:center; }
 .menu td, .menu th { padding:8px 6px 8px 0; }
-.menu input { padding:8px 8px; font-size:14px; min-width:90px; }
+.menu input { padding:8px 8px; font-size:14px; min-width:76px; }
 .scroll { overflow-x:auto; }
 .best { color:var(--gold); border:1px solid var(--gold); padding:2px 8px; display:inline-block; }
 .note { color:var(--mute); font-size:14px; margin-top:16px; }
@@ -154,3 +154,56 @@ nav button[aria-current="page"] { border-bottom-color:transparent; }
   *, *::before, *::after { animation-duration:.01ms !important; animation-delay:0s !important; animation-iteration-count:1 !important; transition-duration:.01ms !important; }
   #sparks { display:none; }
 }
+
+/* ================= ЩЕ АНІМАЦІЙ ТА КОМПОНОВКА ================= */
+.stack { display:grid; gap:24px; align-content:start; }
+.stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:20px; margin-bottom:28px; }
+.stat { padding:18px 22px; }
+.stat-n { font:400 46px/1.05 var(--serif); color:var(--gold); font-variant-numeric:tabular-nums; }
+.stat-l { font:400 11px var(--sans); letter-spacing:.22em; text-transform:uppercase; color:var(--mute); margin-top:6px; }
+.row-line { padding:9px 0; border-bottom:1px solid var(--line); }
+.row-line:last-child { border-bottom:0; }
+
+/* золотий блиск на виділених словах заголовків */
+h1 em { background-image:linear-gradient(100deg,var(--gold) 15%,var(--gold-hi) 45%,var(--gold) 75%); background-size:240% 100%;
+  -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; color:transparent; padding-right:.08em; animation:shimmer 6s linear infinite; }
+@keyframes shimmer { from { background-position:120% 0; } to { background-position:-120% 0; } }
+
+/* світло за курсором і паралакс фону */
+.cursor-glow { position:fixed; left:0; top:0; width:460px; height:460px; margin:-230px 0 0 -230px; border-radius:50%; z-index:0; pointer-events:none;
+  background:radial-gradient(circle, var(--spot), transparent 68%); opacity:0; transition:opacity .6s; will-change:transform; }
+.cursor-glow.on { opacity:1; }
+.bg { transform:translate3d(calc(var(--px,0) * -22px), calc(var(--py,0) * -22px), 0); transition:transform .9s var(--ease); }
+
+/* магнітні кнопки */
+button.primary:hover, button.ghost:hover { transform:translate(var(--tx,0px), calc(var(--ty,0px) - 2px)); }
+
+/* вибух іскор при натисканні */
+.spark { position:fixed; z-index:60; width:7px; height:7px; margin:-3px 0 0 -3px; border-radius:50%; pointer-events:none;
+  background:var(--gold); box-shadow:0 0 10px var(--glow); animation:burst .95s var(--ease) forwards; }
+@keyframes burst { to { transform:translate(var(--dx),var(--dy)) scale(0); opacity:0; } }
+
+/* «Кря!» */
+.brand { cursor:pointer; user-select:none; }
+.quack { position:fixed; z-index:70; pointer-events:none; font:italic 500 26px var(--serif); color:var(--gold); text-shadow:0 4px 18px var(--glow);
+  animation:quack 1.3s var(--ease) forwards; }
+@keyframes quack { 0%{opacity:0;transform:translateY(0) scale(.6) rotate(-6deg)} 25%{opacity:1;transform:translateY(-14px) scale(1.15) rotate(3deg)} 100%{opacity:0;transform:translateY(-70px) scale(1) rotate(-3deg)} }
+.brand.jump svg { animation:jump .6s var(--ease); }
+@keyframes jump { 30%{transform:translateY(-10px) rotate(-14deg)} 60%{transform:translateY(0) rotate(8deg)} 100%{transform:none} }
+
+/* ставок унизу сторінки */
+.pond { position:relative; height:170px; margin-top:32px; overflow:hidden; z-index:1; pointer-events:none; }
+.pond .wave { position:absolute; left:0; bottom:0; width:200%; height:120px; }
+.pond .wave path { fill:var(--gold); }
+.pond .w1 { opacity:.24; animation:wave 16s linear infinite; }
+.pond .w2 { bottom:-10px; opacity:.16; animation:wave 24s linear infinite reverse; }
+.pond .w3 { bottom:-22px; opacity:.12; animation:wave 32s linear infinite; }
+@keyframes wave { to { transform:translateX(-50%); } }
+.swimmer { position:absolute; bottom:62px; left:0; width:54px; color:var(--gold); animation:swim 28s linear infinite; filter:drop-shadow(0 6px 14px var(--glow)); }
+.swimmer svg { display:block; width:100%; animation:paddle 3.2s ease-in-out infinite; }
+@keyframes swim { from { transform:translateX(-90px); } to { transform:translateX(calc(100vw + 90px)); } }
+@keyframes paddle { 0%,100%{transform:translateY(0) rotate(-2deg)} 50%{transform:translateY(-7px) rotate(3deg)} }
+.bubble { position:absolute; bottom:8px; border:1px solid var(--gold); border-radius:50%; opacity:0; animation:bubble 7s ease-in infinite; }
+@keyframes bubble { 0%{transform:translateY(0) scale(.6);opacity:0} 15%{opacity:.7} 100%{transform:translateY(-130px) translateX(14px) scale(1.25);opacity:0} }
+@media (max-width:900px) { .stat-n { font-size:36px; } .pond { height:130px; } }
+@media (prefers-reduced-motion: reduce) { .pond .wave, .swimmer { animation:none !important; } .cursor-glow { display:none; } }
