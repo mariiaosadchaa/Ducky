@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ducky</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=Jost:wght@300;400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <svg width="34" height="34" viewBox="0 0 36 36" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><circle cx="18" cy="18" r="16.5"/><path d="M11 22c0-5 3-9 8-9 3 0 5 2 5 4.5 0 1.5-.8 2.5-2 3M24 17l4 1-4 2M11 22c2 4 8 5 12 2"/><circle cx="21" cy="15" r="0.8" fill="currentColor"/></svg>
+    <span>Ducky</span>
+  </div>
+  <nav id="nav" aria-label="Розділи" hidden></nav>
+  <div class="right"><span id="sync" class="sync" role="status"></span><span id="who" class="who" hidden></span><button id="logoutBtn" class="ghost" type="button" hidden>Вийти</button><button id="themeBtn" class="ghost" type="button">Тема</button></div>
+</header>
+<main id="view"></main>
+<script src="vendor/supabase.js"></script>
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
