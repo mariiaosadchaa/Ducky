@@ -3,6 +3,6 @@
 // НІКОЛИ не вставляйте сюди service_role key.
 // Якщо залишити порожнім, Ducky працює локально: акаунт і дані лише в цьому браузері.
 window.DUCKY_CONFIG = {
-  supabaseUrl: '',
+  supabaseUrl: 'https://yvwqitbyjpqdocugjgvj.supabase.co',
   supabaseAnonKey: '',
 };
