@@ -67,8 +67,67 @@ async function enterRemote(sbUser) {
   remoteReady = true;
   if (data && data.data && typeof data.data === 'object') { state = { ...defaults(), ...data.data }; setSync('Синхронізовано'); }
   else await pushRemote();              // перший вхід: завантажуємо локальний кеш у базу
+  await loadRivnaBudget();
   render();
 }
+// ---------- бюджет із Rivna app (той самий Supabase, лише читання) ----------
+let rivna = null;   // { options: [{ id, name, monthly, weekly, currency }] }
+const localISO = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+
+async function loadRivnaBudget() {
+  rivna = null;
+  try {
+    const mem = await sb.from('household_members').select('household_id, role').eq('user_id', user.id);
+    if (mem.error || !mem.data || !mem.data.length) return;
+    const ids = [...new Set(mem.data.map((m) => m.household_id))];
+    const [hh, cats] = await Promise.all([
+      sb.from('households').select('id, name').in('id', ids),
+      sb.from('categories').select('id, household_id, name').in('household_id', ids).ilike('name', 'Продукти%'),
+    ]);
+    if (cats.error || !cats.data || !cats.data.length) return;
+    const now = new Date();
+    const today = localISO(now);
+    const ym = today.slice(0, 7);
+    const from = new Date(now); from.setDate(from.getDate() - 35);
+    const to = new Date(now); to.setDate(to.getDate() + 35);
+    const bud = await sb.from('budgets').select('household_id, category_id, month, limit_amount, currency, period_type')
+      .in('category_id', cats.data.map((c) => c.id)).gte('month', localISO(from)).lte('month', localISO(to));
+    if (bud.error || !bud.data) return;
+    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    const names = new Map((hh.data || []).map((x) => [x.id, x.name]));
+    const roles = new Map(mem.data.map((m) => [m.household_id, m.role]));
+    const per = new Map();
+    for (const b of bud.data) {
+      if (b.currency && String(b.currency).toUpperCase() !== 'UAH') continue;   // Ducky рахує в гривнях
+      const p = String(b.period_type || '').toLowerCase();
+      const amount = Number(b.limit_amount);
+      if (!isFinite(amount) || amount <= 0) continue;
+      let weekly = null; let monthly = null;
+      if (p.includes('week') || p.includes('тиж')) {
+        const end = new Date(b.month + 'T00:00:00'); end.setDate(end.getDate() + 7);
+        if (b.month <= today && today < localISO(end)) { weekly = amount; monthly = (amount * daysInMonth) / 7; }
+      } else if (String(b.month).slice(0, 7) === ym) {
+        monthly = amount; weekly = (amount * 7) / daysInMonth;
+      }
+      if (weekly == null) continue;
+      const cur = per.get(b.household_id) || { id: b.household_id, name: names.get(b.household_id) || '', monthly: 0, weekly: 0, currency: 'UAH' };
+      cur.monthly += monthly; cur.weekly += weekly;
+      per.set(b.household_id, cur);
+    }
+    const options = [...per.values()].sort((x, y) => (roles.get(y.id) === 'owner') - (roles.get(x.id) === 'owner'));
+    if (options.length) rivna = { options };
+  } catch (e) { rivna = null; }
+}
+function rivnaCurrent() {
+  if (!rivna) return null;
+  return rivna.options.find((o) => o.id === state.rivnaHousehold) || rivna.options[0];
+}
+function effectiveBudget() {
+  const r = rivnaCurrent();
+  if (r && state.budgetMode !== 'manual') return Math.round(r.weekly);
+  return Number(state.budget) || 0;
+}
+
 const authError = (msg) => ({
   'Invalid login credentials': 'Невірна пошта або пароль.',
   'User already registered': 'Обліковий запис із такою поштою вже є. Увійдіть.',
@@ -322,7 +381,7 @@ function viewMenu() {
     const names = [...need.values()];
     const known = names.map((n) => lastKnownPrice(n, prices)).filter((x) => x != null);
     const sum = known.reduce((s, x) => s + x, 0);
-    const budget = Number(state.budget) || 0;
+    const budget = effectiveBudget();
     shopBox.replaceChildren(
       h('h2', {}, 'Список покупок'),
       names.length ? names.map((n) => h('div', { class: 'kv' }, h('span', {}, n),
@@ -340,9 +399,28 @@ function viewMenu() {
       DAYS.map((_, di) => h('td', {}, h('input', { list: 'recipeTitles', 'aria-label': ml + ', ' + DAYS[di], value: state.menu[di + '-' + mk] || '',
         oninput: (e) => { state.menu[di + '-' + mk] = e.target.value; save(); drawShop(); } })))))));
   drawShop();
-  const budget = h('label', { style: 'max-width:240px;margin-bottom:20px' }, 'Тижневий бюджет, ₴',
-    h('input', { type: 'number', min: '0', value: state.budget, oninput: (e) => { state.budget = e.target.value; save(); drawShop(); } }));
-  return [...header('Меню на тиждень', 'Сім днів', 'без хаосу'), budget, dl,
+  const budgetBox = h('div', { style: 'margin-bottom:20px' });
+  const refresh = () => { drawBudget(); drawShop(); };
+  function drawBudget() {
+    const r = rivnaCurrent();
+    if (r && state.budgetMode !== 'manual') {
+      budgetBox.replaceChildren(h('div', { class: 'card gold', style: 'max-width:540px' },
+        h('div', { class: 'tag' }, 'Бюджет тижня · з Rivna app'),
+        h('div', { class: 'total' }, money(Math.round(r.weekly))),
+        h('div', { class: 'mute' }, 'Ліміт категорії «Продукти» на місяць: ' + money(r.monthly) + (r.name ? ' · ' + r.name : '')),
+        rivna.options.length > 1 ? h('label', { style: 'margin-top:12px' }, 'Домогосподарство',
+          h('select', { onchange: (e) => { state.rivnaHousehold = e.target.value; save(); refresh(); } },
+            rivna.options.map((o) => h('option', { value: o.id, selected: o.id === r.id ? true : null }, o.name || 'Без назви')))) : null,
+        h('button', { class: 'link', type: 'button', onclick: () => { state.budgetMode = 'manual'; save(); refresh(); } }, 'Вказати вручну')));
+    } else {
+      budgetBox.replaceChildren(
+        h('label', { style: 'max-width:240px' }, 'Тижневий бюджет, ₴',
+          h('input', { type: 'number', min: '0', value: state.budget, oninput: (e) => { state.budget = e.target.value; save(); drawShop(); } })),
+        r ? h('button', { class: 'link', type: 'button', onclick: () => { state.budgetMode = 'rivna'; save(); refresh(); } }, 'Взяти з Rivna app') : null);
+    }
+  }
+  drawBudget();
+  return [...header('Меню на тиждень', 'Сім днів', 'без хаосу'), budgetBox, dl,
     h('div', { class: 'grid' }, h('div', { class: 'card' }, table), shopBox)];
 }
 
@@ -530,7 +608,7 @@ applyTheme();
       if (session && session.user && event !== 'PASSWORD_RECOVERY') {
         setTimeout(() => enterRemote(session.user), 0);   // не викликаємо supabase усередині колбека
       } else if (!session) {
-        user = null; state = null; remoteReady = false; setSync('');
+        user = null; state = null; remoteReady = false; rivna = null; setSync('');
         if (event === 'SIGNED_OUT') authMode = 'login';
         render();
       } else { render(); }

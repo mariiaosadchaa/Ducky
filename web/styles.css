@@ -1,7 +1,7 @@
 :root {
   --bg:#0b1220; --fg:#efe6d2; --mute:#a9a291; --gold:#d9bf8c; --line:#2a2f3d; --card:rgba(17,26,44,.72);
   --btn-bg:#d9bf8c; --btn-fg:#0b1220; --danger:#e7a08f;
-  --blob1:rgba(217,191,140,.26); --blob2:rgba(60,96,180,.38); --blob3:rgba(130,80,170,.20);
+  --blob1:rgba(217,180,110,.2); --blob2:rgba(60,96,180,.38); --blob3:rgba(130,80,170,.20);
   --spark:217,191,140; --spot:rgba(217,191,140,.16); --glow:rgba(217,191,140,.35); --ease:cubic-bezier(.22,1,.36,1);
   --serif:'Cormorant Garamond',Georgia,serif; --sans:'Jost',system-ui,sans-serif;
 }
@@ -90,7 +90,6 @@ header.top, main { position:relative; z-index:1; }
 @keyframes wordIn { from { opacity:0; transform:translateY(60%) rotate(4deg); filter:blur(14px); } }
 
 /* логотип */
-.brand svg { animation:bob 4.5s ease-in-out infinite; transform-origin:50% 80%; }
 @keyframes bob { 0%,100%{transform:translateY(0) rotate(-3deg)} 50%{transform:translateY(-3px) rotate(3deg)} }
 
 /* емблема на екрані входу */
