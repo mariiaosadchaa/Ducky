@@ -38,7 +38,7 @@
     const list = state.products.filter((p) => isActive(p) && matches(p, key));
     if (!list.length) return { known: true, base: 0 };
     let sum = 0; let ok = false;
-    for (const p of list) { const q = parseQty(p.qty); if (q && q.t === min.t) { sum += q.v; ok = true; } }
+    for (const p of list) { const q = parseQty(measureOf(p)); if (q && q.t === min.t) { sum += q.v; ok = true; } }
     return ok ? { known: true, base: sum } : { known: false, base: 0 };
   }
   const hasIng = (ing) => { const k = norm(ing); return state.products.some((p) => { const n = norm(p.name); return n === k || n.includes(k) || k.includes(n); }); };
@@ -114,7 +114,7 @@
     const bought = () => {
       const marked = items.filter((i) => dn[i.key]);
       if (!marked.length) { msg.textContent = 'Відмітьте те, що купили.'; return; }
-      for (const i of marked) state.products.push({ id: uid(), name: i.name, qty: '', store: '', price: null, bought: todayISO(), exp: null });
+      for (const i of marked) state.products.push({ id: uid(), name: i.name, qty: '', weight: '', store: '', price: null, bought: todayISO(), exp: null });
       state.shopManual = manual().filter((m) => !dn[norm(m.name)]);
       state.shopDone = {};
       save(); render(); X.toast('Додано в комору: ' + marked.length + '. Кількість і ціни зручніше внести зі скану чека.');
@@ -199,7 +199,7 @@
 
   // ---------- ціна за одиницю та історія цін ----------
   function unitPrice(it) {
-    const q = parseQty(it.qty);
+    const q = parseQty(measureOf(it));
     if (!q || it.price == null || !(q.v > 0)) return null;
     return { t: q.t, per: it.price / q.v, assumed: q.assumed };
   }
@@ -393,7 +393,7 @@
     const fz = state.products.filter((p) => p.frozen).sort((a, b) => (a.exp || '9999').localeCompare(b.exp || '9999'));
     if (!fz.length) return null;
     return h('div', { class: 'card', style: 'margin-top:28px' }, h('h2', {}, 'Морозилка'),
-      fz.map((p) => h('div', { class: 'kv row-line' }, h('span', {}, p.name + (p.qty ? ' · ' + p.qty : '')),
+      fz.map((p) => h('div', { class: 'kv row-line' }, h('span', {}, p.name + (qtyText(p) ? ' · ' + qtyText(p) : '')),
         h('span', {}, h('span', { class: 'mute' }, 'до ' + fmtDate(p.exp) + ' '),
           h('button', { class: 'link', type: 'button', onclick: () => toggleFreeze(p) }, 'Розморозити'),
           ' ', h('button', { class: 'link', type: 'button', onclick: () => { X.archiveProduct(p, 'used'); save(); render(); } }, 'Використано')))));
@@ -477,7 +477,7 @@
       else if ((m = /^(.+?)\s+(\d+(?:\.\d+)?)$/.exec(line))) { qty = m[2]; line = m[1]; }
       const name = line.replace(/[\s:–\-.]+$/, '').trim();
       if (name.length < 2 || /^\d+$/.test(name)) continue;
-      out.push({ name: cap(name), qty, exp, store: '', price });
+      out.push({ name: cap(name), ...splitQtyWeight(qty), exp, store: '', price });
     }
     return out.slice(0, 120);
   }
@@ -500,7 +500,8 @@
       const ids = [];
       for (const i of items) {
         const id = uid(); ids.push(id);
-        state.products.push({ id, name: i.name, qty: i.qty || '', store: i.store || store.value.trim(), price: i.price == null ? null : i.price, bought: todayISO(), exp: i.exp || null });
+        const sp = i.weight === undefined ? splitQtyWeight(i.qty) : { qty: i.qty || '', weight: i.weight || '' };
+        state.products.push({ id, name: i.name, qty: sp.qty, weight: sp.weight, store: i.store || store.value.trim(), price: i.price == null ? null : i.price, bought: todayISO(), exp: i.exp || null });
       }
       save(); ta.value = '';
       render();
@@ -515,6 +516,94 @@
     return h('div', { class: 'card', style: 'margin-bottom:24px' }, h('div', { class: 'tag' }, 'Додати списком'),
       h('p', { class: 'mute', style: 'margin:8px 0 12px' }, 'Вставте свій список як є: ШІ розпізнає продукти, кількість і терміни та сам заповнить комору.'),
       ta, h('div', { style: 'display:grid;gap:12px;margin-top:12px' }, store, btn), msg, h('p', { id: 'listMsg', class: 'note', role: 'status', style: 'margin:8px 0 0' }));
+  }
+
+  // ---------- редагування ----------
+  function editProduct(p) {
+    let closeFn = null;
+    const f = { name: p.name, qty: p.qty || '', weight: p.weight || '', store: p.store || '', price: p.price == null ? '' : String(p.price), exp: p.exp || '' };
+    const msg = h('p', { class: 'note', role: 'status', style: 'margin:8px 0 0' });
+    const inp = (label, k, attrs = {}) => h('label', {}, label, h('input', { value: f[k], ...attrs, oninput: (e) => { f[k] = e.target.value; } }));
+    const body = h('div', {},
+      h('div', { style: 'display:grid;grid-template-columns:1fr 1fr;gap:12px' },
+        h('div', { style: 'grid-column:1/-1' }, inp('Продукт', 'name')), inp('Кількість', 'qty', { placeholder: '2 шт' }), inp('Вага / об\'єм', 'weight', { placeholder: '500 г' }), inp('Магазин', 'store'),
+        inp('Ціна, ₴', 'price', { type: 'number', min: '0', step: '0.01' }), inp('Придатний до', 'exp', { type: 'date' })),
+      h('div', { class: 'toolbar', style: 'margin-top:16px' },
+        h('button', { class: 'primary', type: 'button', onclick: () => {
+          const name = f.name.trim(); const price = f.price === '' ? null : Number(f.price);
+          if (!name) { msg.textContent = 'Вкажіть назву.'; return; }
+          if (price != null && !(price >= 0)) { msg.textContent = 'Ціна має бути числом.'; return; }
+          p.name = name; p.qty = f.qty.trim(); p.weight = f.weight.trim(); p.store = f.store.trim(); p.price = price; p.exp = f.exp || null;
+          save(); closeFn(); render();
+        } }, 'Зберегти'),
+        h('button', { class: 'link', type: 'button', onclick: () => closeFn() }, 'Скасувати')), msg);
+    closeFn = X.openModal('Змінити: ' + p.name, body);
+  }
+
+  function editRecipe(r) {
+    let closeFn = null;
+    const msg = h('p', { class: 'note', role: 'status', style: 'margin:8px 0 0' });
+    const title = h('input', { value: r.title, 'aria-label': 'Назва' });
+    const tech = h('select', { 'aria-label': 'Техніка' }, APPLIANCES.map((a) => h('option', { value: a, selected: (r.tech || '') === a ? true : null }, a || 'Не важливо')));
+    const minutes = h('input', { type: 'number', min: '1', value: r.minutes || '', 'aria-label': 'Хвилин' });
+    const servings = h('input', { type: 'number', min: '1', value: r.servings || '', 'aria-label': 'Порцій' });
+    const ings = h('textarea', { rows: 4, 'aria-label': 'Інгредієнти' }); ings.value = r.ings.join('\n');
+    const steps = h('textarea', { rows: 5, 'aria-label': 'Кроки' }); steps.value = (r.steps || []).join('\n');
+    const body = h('div', {},
+      h('div', { style: 'display:grid;grid-template-columns:1fr 1fr;gap:12px' },
+        h('label', { style: 'grid-column:1/-1' }, 'Назва страви', title), h('label', {}, 'Техніка', tech), h('label', {}, 'Хвилин', minutes),
+        h('label', {}, 'Порцій', servings), h('div', {}),
+        h('label', { style: 'grid-column:1/-1' }, 'Інгредієнти (кожен з нового рядка або через кому)', ings),
+        h('label', { style: 'grid-column:1/-1' }, 'Приготування (кожен крок з нового рядка)', steps)),
+      h('div', { class: 'toolbar', style: 'margin-top:16px' },
+        h('button', { class: 'primary', type: 'button', onclick: () => {
+          const list2 = ings.value.split(/[\n,;]+/).map((x) => x.trim()).filter(Boolean);
+          if (!title.value.trim() || !list2.length) { msg.textContent = 'Потрібні назва й хоча б один інгредієнт.'; return; }
+          const oldTitle = r.title;
+          r.title = title.value.trim(); r.tech = tech.value; r.minutes = Number(minutes.value) || null; r.servings = Number(servings.value) || null;
+          r.ings = list2; r.steps = steps.value.split('\n').map((x) => x.trim()).filter(Boolean);
+          // у меню назву рецепта тримаємо синхронною
+          if (oldTitle !== r.title) for (const k of Object.keys(state.menu || {})) if (norm(state.menu[k]) === norm(oldTitle)) state.menu[k] = r.title;
+          save(); closeFn(); render();
+        } }, 'Зберегти'),
+        h('button', { class: 'link', type: 'button', onclick: () => closeFn() }, 'Скасувати')), msg);
+    closeFn = X.openModal('Змінити рецепт', body);
+  }
+
+  function editReceipt(r) {
+    let closeFn = null;
+    const f = { store: r.store || '', date: r.date || todayISO() };
+    const lines = r.items.map((i) => ({ name: i.name, qty: i.qty || '', weight: i.weight || '', price: i.price == null ? '' : String(i.price), exp: i.exp || '' }));
+    const msg = h('p', { class: 'note', role: 'status', style: 'margin:8px 0 0' });
+    const box = h('div', { class: 'lines' });
+    const total = h('div', { class: 'total' });
+    const upd = () => { total.textContent = money(lines.reduce((s, l) => s + (Number(l.price) || 0), 0)); };
+    const draw = () => {
+      box.replaceChildren(...lines.map((l, i) => h('div', { class: 'line' },
+        ...[['name', 'Продукт', 'text'], ['qty', 'Кількість', 'text'], ['weight', 'Вага / об\'єм', 'text'], ['price', 'Ціна, ₴', 'number'], ['exp', 'Придатний до', 'date']].map(([k, ph, type]) =>
+          h('input', { 'aria-label': ph, placeholder: ph, type, value: l[k], step: type === 'number' ? '0.01' : null, min: type === 'number' ? '0' : null, oninput: (e) => { l[k] = e.target.value; upd(); } })),
+        h('button', { class: 'link', type: 'button', onclick: () => { lines.splice(i, 1); draw(); upd(); } }, 'Видалити'))));
+    };
+    draw(); upd();
+    let armed = false;
+    const body = h('div', {},
+      h('div', { style: 'display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px' },
+        h('label', {}, 'Магазин', h('input', { value: f.store, oninput: (e) => { f.store = e.target.value; } })),
+        h('label', {}, 'Дата', h('input', { type: 'date', value: f.date, oninput: (e) => { f.date = e.target.value; } }))),
+      box, h('button', { class: 'ghost', type: 'button', onclick: () => { lines.push({ name: '', qty: '', weight: '', price: '', exp: '' }); draw(); } }, 'Додати позицію'),
+      h('div', { style: 'display:flex;justify-content:space-between;align-items:baseline;margin:16px 0' }, h('span', { class: 'mute' }, 'РАЗОМ'), total),
+      h('div', { class: 'toolbar' },
+        h('button', { class: 'primary', type: 'button', onclick: () => {
+          const items = lines.filter((l) => l.name.trim()).map((l) => ({ name: l.name.trim(), qty: String(l.qty).trim(), weight: String(l.weight).trim(), price: l.price === '' ? null : Number(l.price), exp: l.exp || null }));
+          if (!f.store.trim() || !items.length) { msg.textContent = 'Вкажіть магазин і хоча б одну позицію.'; return; }
+          r.store = f.store.trim(); r.date = f.date || todayISO(); r.items = items; save(); closeFn(); render();
+        } }, 'Зберегти'),
+        h('button', { class: 'link', type: 'button', onclick: (e) => {
+          if (!armed) { armed = true; e.target.textContent = 'Натисніть ще раз, щоб видалити чек'; return; }
+          state.receipts = state.receipts.filter((x) => x !== r); save(); closeFn(); render();
+        } }, 'Видалити чек')),
+      msg, h('p', { class: 'note' }, 'Зміни в чеку впливають на ціни й графіки. Продукти в коморі, додані з цього чека, лишаються як були: змінюйте їх у «Коморі».'));
+    closeFn = X.openModal('Змінити чек', body);
   }
 
   // ---------- мобільна версія (iPhone) ----------
@@ -586,6 +675,6 @@
     return out;
   };
 
-  Object.assign(X, { parseListLocal, toggleFreeze, priceModal, shoppingItems, minShortages, parseQty, unitTable, todayPicks, thawTips });
+  Object.assign(X, { editProduct, editRecipe, editReceipt, parseListLocal, toggleFreeze, priceModal, shoppingItems, minShortages, parseQty, unitTable, todayPicks, thawTips });
   render();
 })();

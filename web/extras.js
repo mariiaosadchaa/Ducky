@@ -163,21 +163,30 @@
 
   function useProduct(p) {
     let closeFn = null;
-    const q = splitQty(p.qty);
+    const q = splitQty(p.weight) || splitQty(p.qty);   // частки рахуємо від ваги, а якщо її немає — від кількості
+    const fracOnWeight = !!splitQty(p.weight);
     const msg = h('p', { class: 'note', role: 'status', style: 'margin:8px 0 0' });
-    const left = h('input', { placeholder: q && q.unit ? 'Наприклад 150 ' + q.unit : 'Скільки залишилось', 'aria-label': 'Залишилось' });
+    const showQty = !!p.qty || !p.weight;
+    const showWeight = !!p.weight || !p.qty;
+    const leftQty = h('input', { placeholder: 'Скільки штук залишилось', 'aria-label': 'Залишилось (кількість)' });
+    const leftW = h('input', { placeholder: q && q.unit && fracOnWeight ? 'Наприклад 150 ' + q.unit : 'Скільки залишилось (г, мл)', 'aria-label': 'Залишилось (вага)' });
     const done = () => { save(); closeFn(); render(); };
+    const target = fracOnWeight || !showQty ? leftW : leftQty;
     const frac = q ? h('div', { class: 'toolbar', style: 'margin:10px 0' }, h('span', { class: 'mute' }, 'Залишилось:'),
-      [['¾', 0.75], ['½', 0.5], ['¼', 0.25]].map(([t, k]) => h('button', { class: 'ghost', type: 'button', onclick: () => { left.value = fmtQty(q.n * k, q.unit, q.comma); } }, t))) : null;
+      [['¾', 0.75], ['½', 0.5], ['¼', 0.25]].map(([t, k]) => h('button', { class: 'ghost', type: 'button', onclick: () => { target.value = fmtQty(q.n * k, q.unit, q.comma); } }, t))) : null;
     const body = h('div', {},
-      h('p', { class: 'mute', style: 'margin:0 0 10px' }, 'Було: ' + (p.qty || 'не вказано') + (p.store ? ' · ' + p.store : '')),
-      h('label', {}, 'Скільки залишилось', left), frac,
+      h('p', { class: 'mute', style: 'margin:0 0 10px' }, 'Було: ' + (qtyText(p) || 'не вказано') + (p.store ? ' · ' + p.store : '')),
+      showQty ? h('label', {}, 'Залишилось: кількість', leftQty) : null,
+      showWeight ? h('label', { style: 'margin-top:8px' }, "Залишилось: вага / об'єм", leftW) : null, frac,
       h('div', { class: 'toolbar', style: 'margin-top:14px' },
         h('button', { class: 'primary', type: 'button', onclick: () => {
-          const v = left.value.trim();
-          if (!v) { msg.textContent = 'Впишіть, скільки залишилось.'; return; }
-          if (isZero(v)) { archiveProduct(p, 'used'); return done(); }
-          p.qty = v; done();
+          const vq = leftQty.value.trim(); const vw = leftW.value.trim();
+          if (!vq && !vw) { msg.textContent = 'Впишіть, скільки залишилось.'; return; }
+          const primary = p.weight || !p.qty ? (vw || vq) : (vq || vw);
+          if ((vw && isZero(vw)) || (vq && isZero(vq)) || (primary && isZero(primary))) { archiveProduct(p, 'used'); return done(); }
+          if (vq) p.qty = vq;
+          if (vw) p.weight = vw;
+          done();
         } }, 'Зберегти залишок'),
         h('button', { class: 'ghost', type: 'button', onclick: () => { archiveProduct(p, 'used'); done(); } }, 'Усе використано'),
         h('button', { class: 'link', type: 'button', onclick: () => { archiveProduct(p, 'thrown'); done(); } }, 'Викинула')),
@@ -200,14 +209,20 @@
     const body = h('div', {},
       h('p', { class: 'mute', style: 'margin:0 0 12px' }, 'Впишіть, скільки залишилось після приготування. Якщо продукт закінчився, поставте галочку. Порожні рядки не змінюються.'),
       ctl.map((c) => h('div', { class: 'cook-row' },
-        h('div', {}, h('div', { class: 'name' }, c.p.name), h('div', { class: 'mute' }, 'Було: ' + (c.p.qty || 'не вказано'))),
+        h('div', {}, h('div', { class: 'name' }, c.p.name), h('div', { class: 'mute' }, 'Було: ' + (qtyText(c.p) || 'не вказано'))),
         c.left, h('label', { class: 'check' }, c.all, 'Усе'))),
       h('button', { class: 'primary', type: 'button', style: 'margin-top:16px', onclick: () => {
         let n = 0;
         for (const c of ctl) {
           const v = c.left.value.trim();
           if (c.all.checked || (v && isZero(v))) { archiveProduct(c.p, 'used'); n++; }
-          else if (v) { c.p.qty = v; n++; }
+          else if (v) {
+            const sp = splitQtyWeight(v);
+            if (sp.weight) { c.p.weight = sp.weight; if (sp.qty) c.p.qty = sp.qty; }
+            else if (c.p.weight && !c.p.qty) c.p.weight = v;
+            else c.p.qty = v;
+            n++;
+          }
         }
         save(); closeFn(); render();
         toast(n ? 'Комору оновлено: ' + n + ' продуктів.' : 'Нічого не змінено.');
@@ -225,7 +240,7 @@
         list.length ? h('div', { class: 'scroll' }, h('table', {},
           h('tr', {}, ['Продукт', 'Кількість', 'Магазин', 'Коли', 'Що сталось', ''].map((t) => h('th', {}, t))),
           list.slice(0, 50).map((a) => h('tr', {},
-            h('td', { class: 'name' }, a.name), h('td', { class: 'mute' }, a.qty || '—'), h('td', { class: 'mute' }, a.store || '—'),
+            h('td', { class: 'name' }, a.name), h('td', { class: 'mute' }, qtyText(a) || '—'), h('td', { class: 'mute' }, a.store || '—'),
             h('td', { class: 'mute' }, fmtDate(a.archivedAt)), h('td', { class: a.reason === 'thrown' ? 'warn' : 'mute' }, REASONS[a.reason] || '—'),
             h('td', {}, h('button', { class: 'link', type: 'button', onclick: () => {
               const { archivedAt, reason, ...prod } = a;
@@ -253,7 +268,7 @@
       if (j.status !== 1 || !j.product) return null;
       const p = j.product;
       const name = [p.product_name_uk || p.product_name, p.brands && String(p.brands).split(',')[0]].filter(Boolean).join(' · ');
-      return name ? { name, qty: p.quantity || '', source: 'Open Food Facts' } : null;
+      return name ? { name, ...splitQtyWeight(p.quantity), source: 'Open Food Facts' } : null;
     } catch (e) { return null; }
   }
 
@@ -274,17 +289,17 @@
       msg.textContent = 'Шукаємо ' + code + '…';
       const info = await lookupBarcode(code);
       msg.textContent = info ? 'Знайдено (' + info.source + '). Перевірте й додайте.' : 'У базі немає такого товару. Введіть назву, ми запам\'ятаємо її.';
-      const f = { name: info ? info.name : '', qty: info ? info.qty : '', store: '', price: '', exp: '' };
+      const f = { name: info ? info.name : '', qty: info ? info.qty || '' : '', weight: info ? info.weight || '' : '', store: '', price: '', exp: '' };
       const inp = (label, k, attrs = {}) => h('label', {}, label, h('input', { value: f[k], ...attrs, oninput: (e) => { f[k] = e.target.value; } }));
       box.replaceChildren(h('div', { class: 'row', style: 'display:grid;grid-template-columns:1fr 1fr;gap:12px' },
         h('div', { style: 'grid-column:1/-1' }, inp('Продукт', 'name', { required: true })),
-        inp('Кількість', 'qty'), inp('Магазин', 'store'),
+        inp('Кількість', 'qty', { placeholder: '1 шт' }), inp('Вага / об\'єм', 'weight', { placeholder: '500 г' }), inp('Магазин', 'store'),
         inp('Ціна, ₴', 'price', { type: 'number', min: '0', step: '0.01' }), inp('Придатний до', 'exp', { type: 'date' })),
         h('button', { class: 'primary', type: 'button', style: 'margin-top:16px', onclick: () => {
           if (!f.name.trim()) { msg.textContent = 'Вкажіть назву продукту.'; return; }
-          state.products.push({ id: uid(), name: f.name.trim(), qty: f.qty.trim(), store: f.store.trim(),
+          state.products.push({ id: uid(), name: f.name.trim(), qty: f.qty.trim(), weight: f.weight.trim(), store: f.store.trim(),
             price: f.price === '' ? null : Number(f.price), bought: todayISO(), exp: f.exp || null });
-          (state.barcodes ||= {})[code] = { name: f.name.trim(), qty: f.qty.trim() };
+          (state.barcodes ||= {})[code] = { name: f.name.trim(), qty: f.qty.trim(), weight: f.weight.trim() };
           save(); closeFn(); render();
         } }, 'Додати в комору'));
     }
@@ -483,11 +498,11 @@
   function saveDraft() {
     const store = draft.store.trim();
     const items = draft.lines.filter((l) => l.name.trim()).map((l) => ({
-      name: l.name.trim(), qty: String(l.qty || '').trim(), price: l.price === '' ? null : Number(l.price), exp: l.exp || null }));
+      name: l.name.trim(), qty: String(l.qty || '').trim(), weight: String(l.weight || '').trim(), price: l.price === '' ? null : Number(l.price), exp: l.exp || null }));
     if (!store || !items.length) return false;
     state.receipts.push({ id: uid(), store, date: draft.date || todayISO(), items });
-    for (const it of items) state.products.push({ id: uid(), name: it.name, qty: it.qty, store, price: it.price, bought: draft.date, exp: it.exp });
-    draft = { store: '', date: todayISO(), lines: [{ name: '', qty: '', price: '', exp: '' }] };
+    for (const it of items) state.products.push({ id: uid(), name: it.name, qty: it.qty, weight: it.weight, store, price: it.price, bought: draft.date, exp: it.exp });
+    draft = { store: '', date: todayISO(), lines: [{ name: '', qty: '', weight: '', price: '', exp: '' }] };
     state.tab = 'pantry'; save(); render();
     return items.length;
   }
@@ -500,7 +515,7 @@
     try {
       const res = await scanReceipt(file);
       draft = { store: res.store || '', date: res.date || todayISO(),
-        lines: res.items.map((i) => ({ name: i.name, qty: i.qty || '', price: i.price == null ? '' : String(i.price), exp: '' })) };
+        lines: res.items.map((i) => ({ name: i.name, qty: i.qty || '', weight: i.weight || '', price: i.price == null ? '' : String(i.price), exp: '' })) };
       if (profile().autoSaveReceipt && draft.store.trim()) {
         const n = saveDraft();
         if (n) { toast('Чек додано в комору: ' + n + ' позицій. Перевірте їх у списку.'); return; }

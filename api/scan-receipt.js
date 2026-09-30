@@ -3,7 +3,7 @@ const { requireUser } = require('./_auth');
 const { askClaude, parseJSON, str, num, isoDate, send } = require('./_claude');
 
 const SYSTEM = 'Ти читаєш фото, скріншот або PDF касового чека з українського магазину. Поверни ЛИШЕ JSON без пояснень: '
-  + '{"store":"назва магазину","date":"YYYY-MM-DD або null","items":[{"name":"назва товару","qty":"кількість/вага або порожньо","price":число}]}. '
+  + '{"store":"назва магазину","date":"YYYY-MM-DD або null","items":[{"name":"назва товару","qty":"кількість штук або упаковок, наприклад 2 шт, або порожньо","weight":"вага чи обʼєм, наприклад 500 г або 1 л, або порожньо","price":число}]}. '
   + 'Ціна — сума за позицію в гривнях. Нічого не вигадуй: якщо значення не видно, став null або порожній рядок. '
   + 'Не включай рядки «Разом», знижки, оплату, ПДВ.';
 
@@ -23,7 +23,7 @@ module.exports = async (req, res) => {
     });
     const j = parseJSON(text);
     if (!j || !Array.isArray(j.items)) return send(res, 422, { error: 'Не вдалося розпізнати чек. Спробуйте чіткіше фото.' });
-    const items = j.items.slice(0, 80).map((i) => ({ name: str(i && i.name), qty: str(i && i.qty, 30), price: num(i && i.price) })).filter((i) => i.name);
+    const items = j.items.slice(0, 80).map((i) => ({ name: str(i && i.name), qty: str(i && i.qty, 30), weight: str(i && i.weight, 30), price: num(i && i.price) })).filter((i) => i.name);
     if (!items.length) return send(res, 422, { error: 'На фото не знайдено позицій.' });
     return send(res, 200, { store: str(j.store, 60), date: isoDate(j.date), items });
   } catch (e) {
