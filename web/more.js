@@ -393,8 +393,9 @@
     const fz = state.products.filter((p) => p.frozen).sort((a, b) => (a.exp || '9999').localeCompare(b.exp || '9999'));
     if (!fz.length) return null;
     return h('div', { class: 'card', style: 'margin-top:28px' }, h('h2', {}, 'Морозилка'),
-      fz.map((p) => h('div', { class: 'kv row-line' }, h('span', {}, p.name + (qtyText(p) ? ' · ' + qtyText(p) : '')),
+      fz.map((p) => h('div', { class: 'kv row-line', style: 'flex-wrap:wrap;gap:4px 12px' }, h('span', {}, p.name + (qtyText(p) ? ' · ' + qtyText(p) : '')),
         h('span', {}, h('span', { class: 'mute' }, 'до ' + fmtDate(p.exp) + ' '),
+          h('button', { class: 'link', type: 'button', onclick: () => editProduct(p) }, 'Змінити'), ' ',
           h('button', { class: 'link', type: 'button', onclick: () => toggleFreeze(p) }, 'Розморозити'),
           ' ', h('button', { class: 'link', type: 'button', onclick: () => { X.archiveProduct(p, 'used'); save(); render(); } }, 'Використано')))));
   }
@@ -526,7 +527,7 @@
     const inp = (label, k, attrs = {}) => h('label', {}, label, h('input', { value: f[k], ...attrs, oninput: (e) => { f[k] = e.target.value; } }));
     const body = h('div', {},
       h('div', { style: 'display:grid;grid-template-columns:1fr 1fr;gap:12px' },
-        h('div', { style: 'grid-column:1/-1' }, inp('Продукт', 'name')), inp('Кількість', 'qty', { placeholder: '2 шт' }), inp('Вага / об\'єм', 'weight', { placeholder: '500 г' }), inp('Магазин', 'store'),
+        h('div', { style: 'grid-column:1/-1' }, inp('Продукт', 'name', { list: 'dl-products', autocomplete: 'off' })), inp('Кількість', 'qty', { placeholder: '2 шт' }), inp('Вага / об\'єм', 'weight', { placeholder: '500 г' }), inp('Магазин', 'store'),
         inp('Ціна, ₴', 'price', { type: 'number', min: '0', step: '0.01' }), inp('Придатний до', 'exp', { type: 'date' })),
       h('div', { class: 'toolbar', style: 'margin-top:16px' },
         h('button', { class: 'primary', type: 'button', onclick: () => {
@@ -581,7 +582,7 @@
     const draw = () => {
       box.replaceChildren(...lines.map((l, i) => h('div', { class: 'line' },
         ...[['name', 'Продукт', 'text'], ['qty', 'Кількість', 'text'], ['weight', 'Вага / об\'єм', 'text'], ['price', 'Ціна, ₴', 'number'], ['exp', 'Придатний до', 'date']].map(([k, ph, type]) =>
-          h('input', { 'aria-label': ph, placeholder: ph, type, value: l[k], step: type === 'number' ? '0.01' : null, min: type === 'number' ? '0' : null, oninput: (e) => { l[k] = e.target.value; upd(); } })),
+          h('input', { 'aria-label': ph, placeholder: ph, type, list: k === 'name' ? 'dl-products' : null, autocomplete: k === 'name' ? 'off' : null, value: l[k], step: type === 'number' ? '0.01' : null, min: type === 'number' ? '0' : null, oninput: (e) => { l[k] = e.target.value; upd(); } })),
         h('button', { class: 'link', type: 'button', onclick: () => { lines.splice(i, 1); draw(); upd(); } }, 'Видалити'))));
     };
     draw(); upd();

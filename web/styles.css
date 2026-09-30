@@ -75,11 +75,11 @@ button.wide { width:100%; padding:14px 18px; }
 /* ================= АНІМАЦІЇ ================= */
 :root { --ease:cubic-bezier(.22,1,.36,1); }
 header.top, main { position:relative; z-index:1; }
-.bg { position:fixed; inset:0; z-index:0; overflow:hidden; pointer-events:none; }
-.bg i { position:absolute; width:52vmax; height:52vmax; border-radius:50%; filter:blur(90px); animation:drift 28s ease-in-out infinite alternate; will-change:transform; }
-.bg i:nth-child(1) { background:var(--blob1); left:-12vmax; top:-16vmax; }
-.bg i:nth-child(2) { background:var(--blob2); right:-18vmax; top:10vh; animation-duration:34s; animation-delay:-9s; }
-.bg i:nth-child(3) { background:var(--blob3); left:18vw; bottom:-26vmax; animation-duration:40s; animation-delay:-16s; }
+.bg { position:fixed; inset:-40px; z-index:0; overflow:hidden; pointer-events:none; }
+.bg i { position:absolute; width:64vmax; height:64vmax; border-radius:50%; animation:drift 28s ease-in-out infinite alternate; will-change:transform; }
+.bg i:nth-child(1) { background:radial-gradient(closest-side,var(--blob1),transparent); left:-12vmax; top:-16vmax; }
+.bg i:nth-child(2) { background:radial-gradient(closest-side,var(--blob2),transparent); right:-18vmax; top:10vh; animation-duration:34s; animation-delay:-9s; }
+.bg i:nth-child(3) { background:radial-gradient(closest-side,var(--blob3),transparent); left:18vw; bottom:-26vmax; animation-duration:40s; animation-delay:-16s; }
 @keyframes drift { 0%{transform:translate3d(0,0,0) scale(1)} 50%{transform:translate3d(6vmax,4vmax,0) scale(1.12)} 100%{transform:translate3d(-5vmax,7vmax,0) scale(.94)} }
 #sparks { position:fixed; inset:0; z-index:0; pointer-events:none; }
 

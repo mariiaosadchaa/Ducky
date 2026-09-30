@@ -292,7 +292,7 @@
       const f = { name: info ? info.name : '', qty: info ? info.qty || '' : '', weight: info ? info.weight || '' : '', store: '', price: '', exp: '' };
       const inp = (label, k, attrs = {}) => h('label', {}, label, h('input', { value: f[k], ...attrs, oninput: (e) => { f[k] = e.target.value; } }));
       box.replaceChildren(h('div', { class: 'row', style: 'display:grid;grid-template-columns:1fr 1fr;gap:12px' },
-        h('div', { style: 'grid-column:1/-1' }, inp('Продукт', 'name', { required: true })),
+        h('div', { style: 'grid-column:1/-1' }, inp('Продукт', 'name', { required: true, list: 'dl-products', autocomplete: 'off' })),
         inp('Кількість', 'qty', { placeholder: '1 шт' }), inp('Вага / об\'єм', 'weight', { placeholder: '500 г' }), inp('Магазин', 'store'),
         inp('Ціна, ₴', 'price', { type: 'number', min: '0', step: '0.01' }), inp('Придатний до', 'exp', { type: 'date' })),
         h('button', { class: 'primary', type: 'button', style: 'margin-top:16px', onclick: () => {

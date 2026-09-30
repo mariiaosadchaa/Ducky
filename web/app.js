@@ -403,6 +403,26 @@ function icon(name) {
   return svg;
 }
 
+// Підказки назв: власні продукти користувача + короткий довідник поширених
+const BASE_FOODS = ('Молоко,Кефір,Ряжанка,Йогурт,Сметана,Вершки,Масло вершкове,Сир твердий,Сир кисломолочний,Сир плавлений,Моцарела,Пармезан,Бринза,Яйця,'
+  + 'Хліб,Батон,Лаваш,Борошно,Цукор,Сіль,Олія соняшникова,Олія оливкова,Оцет,Гречка,Рис,Вівсянка,Пшоно,Перлова крупа,Манка,Макарони,Спагеті,Локшина,'
+  + 'Картопля,Морква,Цибуля,Часник,Буряк,Капуста,Помідори,Огірки,Перець солодкий,Броколі,Цвітна капуста,Гриби,Кабачок,Баклажан,Зелень,Салат,'
+  + 'Яблука,Банани,Апельсини,Лимон,Груші,Виноград,Полуниця,Авокадо,Курка,Куряче філе,Курячі стегна,Свинина,Яловичина,Фарш,Ковбаса,Сосиски,Шинка,Бекон,Сало,'
+  + 'Риба,Лосось,Оселедець,Тунець консервований,Креветки,Горошок консервований,Кукурудза консервована,Квасоля,Сочевиця,Нут,Томатна паста,Кетчуп,Майонез,Гірчиця,'
+  + 'Чай,Кава,Вода,Сік,Мед,Варення,Шоколад,Печиво,Горіхи,Ізюм,Пельмені,Вареники,Заморожені овочі,Морозиво,Перець чорний,Лавровий лист,Паприка,Кориця,Дріжджі,Розпушувач').split(',');
+function refreshNames() {
+  const seen = new Set(); const out = [];
+  const add = (n) => { const t = String(n || '').trim(); const k = norm(t); if (t.length > 1 && !seen.has(k)) { seen.add(k); out.push(t); } };
+  [...state.products, ...(state.archive || [])].forEach((p) => add(p.name));
+  state.receipts.forEach((r) => (r.items || []).forEach((i) => add(i.name)));
+  Object.values(state.barcodes || {}).forEach((b) => add(b && b.name));
+  BASE_FOODS.forEach(add);
+  let dl = document.getElementById('dl-products');
+  if (!dl) { dl = document.createElement('datalist'); dl.id = 'dl-products'; document.body.append(dl); }
+  const sig = out.join('|');
+  if (dl.dataset.sig !== sig) { dl.dataset.sig = sig; dl.replaceChildren(...out.map((n) => h('option', { value: n }))); }
+}
+
 function viewPantry() {
   const form = h('form', { class: 'row', onsubmit: (e) => {
     e.preventDefault();
@@ -415,7 +435,7 @@ function viewPantry() {
     });
     save(); render();
   } },
-    field('Продукт', 'name', { required: true }), field('Кількість', 'qty', { placeholder: '2 шт' }), field('Вага / об\'єм', 'weight', { placeholder: '500 г' }),
+    field('Продукт', 'name', { required: true, list: 'dl-products', autocomplete: 'off', placeholder: 'Почніть вводити…' }), field('Кількість', 'qty', { placeholder: '2 шт' }), field('Вага / об\'єм', 'weight', { placeholder: '500 г' }),
     field('Магазин', 'store'), field('Ціна, ₴', 'price', { type: 'number', min: '0', step: '0.01' }),
     field('Придатний до', 'exp', { type: 'date' }),
     h('button', { class: 'primary', type: 'submit' }, 'Додати'));
@@ -469,7 +489,7 @@ function viewScan() {
   const drawLines = () => {
     linesBox.replaceChildren(...draft.lines.map((l, i) => h('div', { class: 'line' },
       ...[['name', 'Продукт', 'text'], ['qty', 'Кількість', 'text'], ['weight', 'Вага / об\'єм', 'text'], ['price', 'Ціна, ₴', 'number'], ['exp', 'Придатний до', 'date']].map(([k, ph, type]) =>
-        h('input', { 'aria-label': ph, placeholder: ph, type, value: l[k], step: type === 'number' ? '0.01' : null, min: type === 'number' ? '0' : null,
+        h('input', { 'aria-label': ph, placeholder: ph, type, list: k === 'name' ? 'dl-products' : null, autocomplete: k === 'name' ? 'off' : null, value: l[k], step: type === 'number' ? '0.01' : null, min: type === 'number' ? '0' : null,
           oninput: (e) => { l[k] = e.target.value; updateTotal(); } })),
       h('button', { class: 'link', type: 'button', onclick: () => {
         draft.lines.splice(i, 1); if (!draft.lines.length) draft.lines.push({ name: '', qty: '', weight: '', price: '', exp: '' }); drawLines(); updateTotal();
@@ -759,6 +779,7 @@ function render() {
   if (!hasUser) { $view.replaceChildren(...viewAuth()); fxDone('auth-' + authMode); return; }
   $who.textContent = user.name;
   migrateWeight(state);
+  refreshNames();
   drawScope();
   if (!VIEWS[state.tab]) state.tab = 'pantry';
   $nav.replaceChildren(...TABS.map(([k, t]) => h('button', { type: 'button', 'aria-current': k === state.tab ? 'page' : null,
