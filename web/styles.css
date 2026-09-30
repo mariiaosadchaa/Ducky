@@ -274,7 +274,7 @@ details.archive summary { cursor:pointer; font:400 24px var(--serif); color:var(
 @media (max-width:600px) { .cook-row { grid-template-columns:1fr 1fr; } .cook-row > label { grid-column:1/-1; } }
 
 /* ===== v4: покупки, набори, історія цін ===== */
-.shop-row { display:grid; grid-template-columns:auto 1fr auto auto; gap:12px; align-items:center; padding:10px 0; border-top:1px solid var(--line); flex-direction:row; text-transform:none; letter-spacing:0; font-size:16px; color:var(--fg); font-weight:300; cursor:pointer; }
+.shop-row { display:grid; grid-template-columns:auto 1fr auto auto auto; gap:12px; align-items:center; padding:10px 0; border-top:1px solid var(--line); flex-direction:row; text-transform:none; letter-spacing:0; font-size:16px; color:var(--fg); font-weight:300; cursor:pointer; }
 .shop-row:first-child { border-top:0; }
 .shop-row.done .shop-n { text-decoration:line-through; opacity:.5; }
 .shop-p { min-width:64px; text-align:right; }
@@ -286,7 +286,7 @@ td.name.clickable:hover { color:var(--gold); text-decoration:underline; }
 .legend { display:flex; flex-wrap:wrap; gap:6px 16px; margin-top:6px; font-size:14px; color:var(--mute); }
 .legend i { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:6px; }
 textarea { resize:vertical; min-height:64px; font-family:var(--sans); }
-@media (max-width:600px) { .shop-row { grid-template-columns:auto 1fr auto; } .shop-row .tag { display:none; } }
+@media (max-width:600px) { .shop-row { grid-template-columns:auto 1fr auto auto; } .shop-row .tag { display:none; } }
 div.row > input { min-width:0; flex:1; }
 div.row > button { flex:none; }
 
@@ -299,7 +299,6 @@ input, select, textarea { -webkit-appearance:none; appearance:none; border-radiu
 select { background-image:linear-gradient(45deg,transparent 50%,var(--mute) 50%),linear-gradient(135deg,var(--mute) 50%,transparent 50%); background-position:calc(100% - 18px) 55%,calc(100% - 13px) 55%; background-size:5px 5px,5px 5px; background-repeat:no-repeat; padding-right:32px; }
 input[type="checkbox"] { -webkit-appearance:auto; appearance:auto; }
 input[type="date"] { min-height:46px; }
-.daycards { display:none; }
 .sheet { display:grid; gap:0; }
 .sheet-item { background:none; border:0; border-top:1px solid var(--line); color:var(--fg); text-align:left; padding:16px 4px; font:400 17px var(--sans); cursor:pointer; }
 .sheet-item:first-child { border-top:0; }
@@ -349,10 +348,6 @@ input[type="date"] { min-height:46px; }
   .toast { bottom:calc(88px + env(safe-area-inset-bottom)); }
   button.primary, button.ghost { min-height:44px; }
   form.row { grid-template-columns:repeat(2,minmax(0,1fr)); }
-  .menu-orig { display:none; }
-  .daycards { display:grid; gap:12px; }
-  .daycard { border:1px solid var(--line); padding:14px; display:grid; gap:10px; }
-  .daycard h3 { margin:0; font:400 22px var(--serif); color:var(--gold); }
   td.acts { white-space:normal; }
   td.acts .link { display:inline-block; padding:8px 6px; }
   .dz-t { font-size:20px; }
@@ -390,3 +385,30 @@ svg.i { width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:1.
 .ib svg { width:17px; height:17px; }
 @media (hover:none) { .ib { width:38px; height:38px; } }
 @media (max-width:520px) { .shelf { grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; } .lbl { padding-inline:6px; } .lbl .acts { flex-wrap:wrap; } }
+
+/* v6: кількість = число + список одиниць */
+.qtybox { display:flex; gap:6px; align-items:stretch; min-width:0; }
+.qtybox input[type=text] { flex:1 1 auto; min-width:0; width:100%; }
+.qtybox select { flex:0 0 auto; width:auto; min-width:64px; }
+
+.shop-x { padding:4px 8px; color:var(--mute); font-size:14px; }
+.shop-x:hover { color:#b4441f; }
+
+/* v6: меню як картки днів (дизайн 2) */
+.menu-orig { display:none; }
+.daycards { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:12px; }
+.daycard { border:1px solid var(--line); background:var(--card); display:grid; align-content:start; min-width:0; }
+.daycard header { display:flex; justify-content:space-between; align-items:baseline; padding:12px 14px; border-bottom:1px solid var(--line); }
+.daycard header b { font:500 22px var(--serif); color:var(--fg); }
+.daycard header span { font-size:12px; color:var(--mute); }
+.daycard.today header { background:var(--fg); }
+.daycard.today header b, .daycard.today header span { color:var(--bg); }
+.daycard .mrow { display:grid; grid-template-columns:22px minmax(0,1fr); gap:8px; padding:10px 14px; border-bottom:1px dashed var(--line); align-items:start; }
+.daycard .mrow:last-child { border-bottom:0; }
+.daycard .mi { color:var(--gold); padding-top:9px; }
+.daycard .mi svg { width:18px; height:18px; }
+.daycard .mb { display:grid; gap:5px; min-width:0; }
+.daycard .mb input { width:100%; }
+.st { display:inline-flex; align-items:center; gap:5px; font-size:12px; padding:2px 9px; border-radius:99px; white-space:nowrap; }
+.st svg { width:13px; height:13px; }
+.st.ok { background:rgba(47,125,91,.14); color:#2f7d5b; } .st.bad { background:rgba(180,68,31,.13); color:#b4441f; } .st.no { background:rgba(120,130,150,.12); color:var(--mute); }

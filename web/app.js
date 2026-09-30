@@ -262,6 +262,34 @@ const norm = (s) => String(s || '').trim().toLowerCase();
 const money = (n) => (Math.round(n * 100) / 100).toLocaleString('uk-UA') + ' ₴';
 const todayISO = () => new Date().toISOString().slice(0, 10);
 // Кількість (штуки/упаковки) і вага/об'єм — окремі поля
+// Кількість: число + випадаючий список одиниць (шт, уп, пач…). Значення зберігається рядком «2 шт».
+const QTY_UNITS = [['шт', 'шт'], ['уп', 'упаковка'], ['пач', 'пачка'], ['пляш', 'пляшка'], ['банка', 'банка'], ['пакет', 'пакет'], ['порц', 'порція']];
+function qtyInput(o = {}) {
+  const raw = String(o.value == null ? '' : o.value).trim();
+  const m = /^(\d+(?:[.,]\d+)?)\s*([а-яіїєґ]*)\.?$/i.exec(raw);
+  const findUnit = (w) => { const t = String(w || '').toLowerCase(); const u = QTY_UNITS.find(([k]) => t && t.startsWith(k)) || (t.startsWith('штук') ? QTY_UNITS[0] : t.startsWith('упак') ? QTY_UNITS[1] : null); return u ? u[0] : null; };
+  let num = ''; let unit = 'шт';
+  if (raw) {
+    if (m) { num = m[1]; unit = m[2] ? (findUnit(m[2]) || '') : ''; if (m[2] && !unit) { num = raw; } }
+    else { num = raw; unit = ''; }
+  }
+  const numEl = h('input', { type: 'text', inputmode: 'decimal', autocomplete: 'off', placeholder: '2', 'aria-label': 'Кількість', value: num });
+  const unitEl = h('select', { 'aria-label': 'Одиниця' }, h('option', { value: '' }, '—'), QTY_UNITS.map(([k, t]) => h('option', { value: k, title: t }, k)));
+  unitEl.value = unit;
+  const hidden = h('input', { type: 'hidden', name: o.name || null });
+  const box = h('div', { class: 'qtybox' }, numEl, unitEl, hidden);
+  const get = () => { const n = numEl.value.trim(); return n ? n + (unitEl.value ? ' ' + unitEl.value : '') : ''; };
+  const sync = () => { hidden.value = get(); if (o.onInput) o.onInput(get()); };
+  numEl.addEventListener('input', () => {   // «3 шт» у полі числа: одиниця сама перейде у список
+    const t = /^\s*(\d+(?:[.,]\d+)?)\s*([а-яіїєґ]+)\.?\s*$/i.exec(numEl.value);
+    const u = t && findUnit(t[2]);
+    if (u) { numEl.value = t[1]; unitEl.value = u; }
+    sync();
+  }); unitEl.addEventListener('change', sync);
+  hidden.value = get();
+  Object.defineProperty(box, 'value', { get, set: (v) => { const t = qtyInput({ value: v }); numEl.value = t.querySelector('input').value; unitEl.value = t.querySelector('select').value; sync(); } });
+  return box;
+}
 const WEIGHT_RE = /(\d+(?:[.,]\d+)?)\s*(кг|гр|г|мл|л|kg|g|ml|l)(?![а-яіїєґa-z])/i;
 function splitQtyWeight(str) {
   const t = String(str == null ? '' : str).trim();
@@ -326,7 +354,8 @@ function lastKnownPrice(name, prices) {
   const vals = Object.values(p);
   return vals[vals.length - 1];
 }
-const pantryNames = () => new Set(state.products.map((p) => norm(p.name)));
+// «Що є вдома»: has(інгредієнт) шукає за змістом («курка» знаходить «куряче філе»), а не за точним текстом
+const pantryNames = () => ({ has: (n) => state.products.some((p) => foodMatch(n, p.name)) });
 
 
 // ---------- спільні блоки ----------
@@ -364,6 +393,11 @@ function header(eyebrow, title, emphasis) {
 
 // Іконки (лінійні, 24x24)
 const ICONS = {
+  sun: 'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z M12 3v2 M12 19v2 M3 12h2 M19 12h2 M5.6 5.6L7 7 M17 17l1.4 1.4 M5.6 18.4L7 17 M17 7l1.4-1.4',
+  bowl: 'M3 11h18a9 9 0 0 1-18 0z M9 7c0-1.5 1-1.5 1-3 M14 7c0-1.5 1-1.5 1-3',
+  moon: 'M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z',
+  check: 'M5 12.5l4.5 4.5L19 7.5',
+  cart: 'M3 4h3l2 11h10l2-8H7 M9 19h.01 M17 19h.01',
   milk: 'M9 3h6l1 4 2 2v11a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V9l2-2z M6 12h12',
   jar: 'M7 4h10v3H7z M6 7h12v12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2z M6 12h12',
   cheese: 'M3 17V10l17-5v12z M3 17h17 M9 14h.01 M14 11h.01',
@@ -410,6 +444,7 @@ const BASE_FOODS = ('Молоко,Кефір,Ряжанка,Йогурт,Сме�
   + 'Яблука,Банани,Апельсини,Лимон,Груші,Виноград,Полуниця,Авокадо,Курка,Куряче філе,Курячі стегна,Свинина,Яловичина,Фарш,Ковбаса,Сосиски,Шинка,Бекон,Сало,'
   + 'Риба,Лосось,Оселедець,Тунець консервований,Креветки,Горошок консервований,Кукурудза консервована,Квасоля,Сочевиця,Нут,Томатна паста,Кетчуп,Майонез,Гірчиця,'
   + 'Чай,Кава,Вода,Сік,Мед,Варення,Шоколад,Печиво,Горіхи,Ізюм,Пельмені,Вареники,Заморожені овочі,Морозиво,Перець чорний,Лавровий лист,Паприка,Кориця,Дріжджі,Розпушувач').split(',');
+const BASE_STORES = ['Сільпо', 'АТБ', 'Фора', 'Novus', 'Metro', 'Ашан', 'Varus', 'ЕКО маркет', 'Копійка', 'Мій маркет', 'Наш Край', 'Близенько', 'Аврора', 'Ринок', 'Магазин біля дому', 'Інтернет-замовлення'];
 function refreshNames() {
   const seen = new Set(); const out = [];
   const add = (n) => { const t = String(n || '').trim(); const k = norm(t); if (t.length > 1 && !seen.has(k)) { seen.add(k); out.push(t); } };
@@ -417,6 +452,15 @@ function refreshNames() {
   state.receipts.forEach((r) => (r.items || []).forEach((i) => add(i.name)));
   Object.values(state.barcodes || {}).forEach((b) => add(b && b.name));
   BASE_FOODS.forEach(add);
+  // магазини: спершу ті, де вже купували, потім поширені мережі
+  const shops = []; const seenS = new Set();
+  const addS = (n) => { const t = String(n || '').trim(); const k = norm(t); if (t && !seenS.has(k)) { seenS.add(k); shops.push(t); } };
+  state.receipts.forEach((r) => addS(r.store)); state.products.forEach((p) => addS(p.store)); (state.archive || []).forEach((p) => addS(p.store));
+  BASE_STORES.forEach(addS);
+  let ds = document.getElementById('dl-stores');
+  if (!ds) { ds = document.createElement('datalist'); ds.id = 'dl-stores'; document.body.append(ds); }
+  const sigS = shops.join('|');
+  if (ds.dataset.sig !== sigS) { ds.dataset.sig = sigS; ds.replaceChildren(...shops.map((n) => h('option', { value: n }))); }
   let dl = document.getElementById('dl-products');
   if (!dl) { dl = document.createElement('datalist'); dl.id = 'dl-products'; document.body.append(dl); }
   const sig = out.join('|');
@@ -435,8 +479,8 @@ function viewPantry() {
     });
     save(); render();
   } },
-    field('Продукт', 'name', { required: true, list: 'dl-products', autocomplete: 'off', placeholder: 'Почніть вводити…' }), field('Кількість', 'qty', { placeholder: '2 шт' }), field('Вага / об\'єм', 'weight', { placeholder: '500 г' }),
-    field('Магазин', 'store'), field('Ціна, ₴', 'price', { type: 'number', min: '0', step: '0.01' }),
+    field('Продукт', 'name', { required: true, list: 'dl-products', autocomplete: 'off', placeholder: 'Почніть вводити…' }), h('label', {}, 'Кількість', qtyInput({ name: 'qty' })), field('Вага / об\'єм', 'weight', { placeholder: '500 г' }),
+    field('Магазин', 'store', { list: 'dl-stores', autocomplete: 'off', placeholder: 'Оберіть або впишіть' }), field('Ціна, ₴', 'price', { type: 'number', min: '0', step: '0.01' }),
     field('Придатний до', 'exp', { type: 'date' }),
     h('button', { class: 'primary', type: 'submit' }, 'Додати'));
 
@@ -489,7 +533,7 @@ function viewScan() {
   const drawLines = () => {
     linesBox.replaceChildren(...draft.lines.map((l, i) => h('div', { class: 'line' },
       ...[['name', 'Продукт', 'text'], ['qty', 'Кількість', 'text'], ['weight', 'Вага / об\'єм', 'text'], ['price', 'Ціна, ₴', 'number'], ['exp', 'Придатний до', 'date']].map(([k, ph, type]) =>
-        h('input', { 'aria-label': ph, placeholder: ph, type, list: k === 'name' ? 'dl-products' : null, autocomplete: k === 'name' ? 'off' : null, value: l[k], step: type === 'number' ? '0.01' : null, min: type === 'number' ? '0' : null,
+        k === 'qty' ? qtyInput({ value: l.qty, onInput: (v) => { l.qty = v; } }) : h('input', { 'aria-label': ph, placeholder: ph, type, list: k === 'name' ? 'dl-products' : null, autocomplete: k === 'name' ? 'off' : null, value: l[k], step: type === 'number' ? '0.01' : null, min: type === 'number' ? '0' : null,
           oninput: (e) => { l[k] = e.target.value; updateTotal(); } })),
       h('button', { class: 'link', type: 'button', onclick: () => {
         draft.lines.splice(i, 1); if (!draft.lines.length) draft.lines.push({ name: '', qty: '', weight: '', price: '', exp: '' }); drawLines(); updateTotal();
@@ -500,7 +544,7 @@ function viewScan() {
   const msg = h('p', { class: 'note', role: 'status' });
   const form = h('div', { class: 'card' },
     h('div', { class: 'row', style: 'display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px' },
-      h('label', {}, 'Магазин', h('input', { value: draft.store, oninput: (e) => { draft.store = e.target.value; } })),
+      h('label', {}, 'Магазин', h('input', { list: 'dl-stores', autocomplete: 'off', value: draft.store, oninput: (e) => { draft.store = e.target.value; } })),
       h('label', {}, 'Дата', h('input', { type: 'date', value: draft.date, oninput: (e) => { draft.date = e.target.value; } }))),
     linesBox,
     h('button', { class: 'ghost', type: 'button', onclick: () => { draft.lines.push({ name: '', qty: '', weight: '', price: '', exp: '' }); drawLines(); } }, 'Додати позицію'),
@@ -589,9 +633,9 @@ function viewMenu() {
     const budget = effectiveBudget();
     shopBox.replaceChildren(
       h('h2', {}, 'Список покупок'),
-      names.length ? names.map((n) => h('div', { class: 'kv' }, h('span', {}, n),
+      ...(names.length ? names.map((n) => h('div', { class: 'kv' }, h('span', {}, n),
         h('span', { class: 'mute' }, lastKnownPrice(n, prices) != null ? money(lastKnownPrice(n, prices)) : '—')))
-        : h('p', { class: 'empty' }, 'Впишіть у меню назви збережених рецептів, і тут з\'явиться, що докупити.'),
+        : [h('p', { class: 'empty' }, 'Впишіть у меню назви збережених рецептів, і тут з\'явиться, що докупити.')]),
       h('div', { style: 'border-top:1px solid var(--line);margin-top:16px;padding-top:12px' },
         h('div', { class: 'mute' }, 'РАЗОМ' + (known.length < names.length ? ' (за відомими цінами)' : '')),
         h('div', { class: 'total' }, money(sum)),

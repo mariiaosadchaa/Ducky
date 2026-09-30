@@ -32,7 +32,7 @@
 
   // ---------- збіг продуктів ----------
   const isActive = (p) => p && p.name;
-  const matches = (p, key) => { const n = norm(p.name); return n === key || n.includes(key); };
+  const matches = (p, key) => foodMatch(key, p.name);
   function stockOf(name, min) {
     const key = norm(name);
     const list = state.products.filter((p) => isActive(p) && matches(p, key));
@@ -41,7 +41,7 @@
     for (const p of list) { const q = parseQty(measureOf(p)); if (q && q.t === min.t) { sum += q.v; ok = true; } }
     return ok ? { known: true, base: sum } : { known: false, base: 0 };
   }
-  const hasIng = (ing) => { const k = norm(ing); return state.products.some((p) => { const n = norm(p.name); return n === k || n.includes(k) || k.includes(n); }); };
+  const hasIng = (ing) => state.products.some((p) => foodMatch(ing, p.name));
 
   // ---------- мінімальні запаси ----------
   const mins = () => state.mins || (state.mins = {});
@@ -67,6 +67,7 @@
   // ---------- список покупок ----------
   const manual = () => state.shopManual || (state.shopManual = []);
   const done = () => state.shopDone || (state.shopDone = {});
+  const hiddenShop = () => state.shopHidden || (state.shopHidden = {});
   function shoppingItems() {
     const map = new Map();
     const put = (name, src, note) => {
@@ -81,7 +82,8 @@
     }
     for (const s of minShortages()) put(s.m.name, 'мінімум', 'мінімум ' + fmtN(s.m.n) + ' ' + s.m.u + ', є ' + fmtN(s.have));
     for (const m of manual()) put(m.name, 'вручну');
-    return [...map.values()];
+    const hid = hiddenShop();
+    return [...map.values()].filter((it) => !hid[it.key] || it.src.has('вручну'));
   }
 
   function viewShop() {
@@ -107,7 +109,13 @@
       h('input', { type: 'checkbox', checked: dn[i.key] ? true : null, onchange: (e) => { if (e.target.checked) dn[i.key] = true; else delete dn[i.key]; save(); render(); } }),
       h('span', { class: 'shop-n' }, i.name, i.note ? h('span', { class: 'mute' }, ' · ' + i.note) : null),
       h('span', { class: 'tag' }, [...i.src].join(', ')),
-      h('span', { class: 'mute shop-p' }, priceOf(i.name) != null ? money(priceOf(i.name)) : '—')))
+      h('span', { class: 'mute shop-p' }, priceOf(i.name) != null ? money(priceOf(i.name)) : '—'),
+      h('button', { class: 'link shop-x', type: 'button', title: 'Прибрати зі списку', 'aria-label': 'Прибрати зі списку: ' + i.name, onclick: (e) => {
+        e.preventDefault(); e.stopPropagation();
+        if (i.src.has('вручну')) state.shopManual = manual().filter((m) => norm(m.name) !== i.key);
+        hiddenShop()[i.key] = true; delete dn[i.key];
+        save(); render();
+      } }, '✕')))
       : h('p', { class: 'empty' }, 'Список порожній. Тут з\'являться продукти з меню тижня, ті, що впали нижче мінімуму, і ті, що ви додасте самі.');
 
     const copyText = () => open.map((i) => '☐ ' + i.name + (i.note ? ' (' + i.note + ')' : '')).join('\n');
@@ -134,7 +142,8 @@
           try { await navigator.clipboard.writeText(copyText()); msg.textContent = 'Список скопійовано.'; }
           catch (e) { msg.textContent = 'Не вдалося скопіювати. Виділіть і скопіюйте вручну.'; }
         } }, 'Скопіювати'),
-        manual().length ? h('button', { class: 'link', type: 'button', onclick: () => { state.shopManual = []; save(); render(); } }, 'Прибрати додані вручну') : null),
+        manual().length ? h('button', { class: 'link', type: 'button', onclick: () => { state.shopManual = []; save(); render(); } }, 'Прибрати додані вручну') : null,
+        Object.keys(hiddenShop()).length ? h('button', { class: 'link', type: 'button', onclick: () => { state.shopHidden = {}; save(); render(); } }, 'Повернути прибрані (' + Object.keys(hiddenShop()).length + ')') : null),
       msg);
     return [...header('Покупки', 'Що треба', 'купити'), h('div', { class: 'grid' }, main, h('div', { class: 'stack' }, minsCard(), setsCard(), frequentCard()))];
   }
@@ -340,21 +349,26 @@
     const likes = list(state.profile && state.profile.likes).map(norm);
     return pool.map((r) => {
       const missing = r.ings.filter((i) => !hasIng(i));
-      const useSoon = soon.filter((p) => r.ings.some((i) => matches(p, norm(i)) || norm(i).includes(norm(p.name))));
-      const like = r.ings.filter((i) => likes.some((l) => norm(i).includes(l))).length;
+      const useSoon = soon.filter((p) => r.ings.some((i) => foodMatch(i, p.name)));
+      const like = r.ings.filter((i) => likes.some((l) => norm(i).includes(l) || foodMatch(l, i))).length;
       const fz = frozenFor(r);
       return { r, missing, useSoon, fz, score: missing.length * 10 - useSoon.length * 6 - like * 3 + fz.length * 2 };
     }).sort((a, b) => a.score - b.score).slice(0, 3);
   }
   function list(s) { return String(s || '').split(/[,;\n]/).map((x) => x.trim()).filter(Boolean); }
+  // Розморожувати наперед має сенс для м'яса, риби, готових страв; жири, спеції й бакалію пропускаємо
+  const NO_THAW = /масл|олі|олій|сіл|цукор|борошн|спец|перець|оцет|дріжд|розпушув|мед\b|кориц|паприк|лавров/i;
   function thawTips() {
     const byTitle = new Map(state.recipes.map((r) => [norm(r.title), r]));
-    const out = [];
+    const out = []; const seen = new Set();
     [[0, 'сьогодні'], [1, 'завтра']].forEach(([off, label]) => {
-      const seen = new Set();
       for (const [mk] of MEALS) {
         const t = (state.menu || {})[dayIdx(off) + '-' + mk]; const r = t && byTitle.get(norm(t)); if (!r) continue;
-        for (const p of frozenFor(r)) if (!seen.has(p.id)) { seen.add(p.id); out.push({ p, label }); }
+        for (const p of frozenFor(r)) {
+          const k = norm(p.name);
+          if (NO_THAW.test(p.name) || seen.has(k)) continue;
+          seen.add(k); out.push({ p, label });
+        }
       }
     });
     return out;
@@ -440,12 +454,63 @@
     }
     return out;
   };
+  // ---------- вивантаження комори ----------
+  const REASON_TXT = { used: 'використано', thrown: 'викинуто', removed: 'прибрано' };
+  function exportRows(withArchive) {
+    const rows = state.products.map((p) => ({ n: p.name, q: p.qty || '', w: p.weight || '', st: p.store || '', pr: p.price, b: p.bought || '', e: p.exp || '', where: p.frozen ? 'морозилка' : 'комора', why: '' }));
+    if (withArchive) for (const a of state.archive || []) rows.push({ n: a.name, q: a.qty || '', w: a.weight || '', st: a.store || '', pr: a.price, b: a.bought || '', e: a.exp || '', where: 'архів', why: (REASON_TXT[a.reason] || '') + (a.archivedAt ? ' ' + fmtDate(a.archivedAt) : '') });
+    return rows;
+  }
+  function exportText(withArchive) {
+    const rows = exportRows(withArchive);
+    const groups = ['комора', 'морозилка', 'архів'];
+    const out = ['Ducky · комора на ' + fmtDate(todayISO()), ''];
+    for (const g of groups) {
+      const l = rows.filter((r) => r.where === g); if (!l.length) continue;
+      out.push(g.toUpperCase() + ' (' + l.length + ')');
+      for (const r of l) out.push('• ' + r.n + [r.q, r.w].filter(Boolean).map((x) => ' · ' + x).join('') + (r.e ? ' · до ' + fmtDate(r.e) : '') + (r.st ? ' · ' + r.st : '') + (r.pr != null ? ' · ' + r.pr + ' ₴' : '') + (r.why ? ' · ' + r.why : ''));
+      out.push('');
+    }
+    return out.join('\n').trim() + '\n';
+  }
+  function exportCsv(withArchive) {
+    const cell = (v) => { let t = String(v == null ? '' : v); if (/^[=+\-@\t\r]/.test(t)) t = "'" + t; return /[";\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
+    const head = ['Продукт', 'Кількість', "Вага / об'єм", 'Магазин', 'Ціна, ₴', 'Куплено', 'Придатний до', 'Де', 'Що сталось'];
+    const lines = [head, ...exportRows(withArchive).map((r) => [r.n, r.q, r.w, r.st, r.pr == null ? '' : String(r.pr).replace('.', ','), r.b, r.e, r.where, r.why])];
+    return '\ufeff' + lines.map((l) => l.map(cell).join(';')).join('\r\n') + '\r\n';
+  }
+  function saveFile(name, text, type) {
+    const url = URL.createObjectURL(new Blob([text], { type }));
+    const a = h('a', { href: url, download: name }); document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  }
+  function exportCard() {
+    const arch = h('input', { type: 'checkbox', id: 'exArch' });
+    const msg = h('p', { class: 'note', role: 'status', style: 'margin:10px 0 0' });
+    const stamp = () => todayISO();
+    const total = () => state.products.length + (arch.checked ? (state.archive || []).length : 0);
+    const go = (fn) => () => { if (!total()) { msg.textContent = 'Комора порожня, вивантажувати нічого.'; return; } try { fn(); } catch (e) { msg.textContent = 'Не вдалося: ' + e.message; } };
+    return h('div', { class: 'card', style: 'margin-top:28px' }, h('h2', {}, 'Вивантажити комору'),
+      h('p', { class: 'mute', style: 'margin:0 0 12px' }, 'Весь список у текст для повідомлення, у таблицю для Excel або у резервну копію.'),
+      h('label', { class: 'check', for: 'exArch', style: 'margin-bottom:12px;display:flex;gap:8px;align-items:center' }, arch, 'Додати архів'),
+      h('div', { class: 'toolbar' },
+        h('button', { class: 'ghost', type: 'button', onclick: go(async () => {
+          try { await navigator.clipboard.writeText(exportText(arch.checked)); msg.textContent = 'Скопійовано. Можна вставити в повідомлення чи нотатки.'; }
+          catch (e) { msg.textContent = 'Не вдалося скопіювати автоматично. Завантажте файл .txt.'; }
+        }) }, 'Скопіювати текстом'),
+        h('button', { class: 'ghost', type: 'button', onclick: go(() => { saveFile('ducky-komora-' + stamp() + '.txt', exportText(arch.checked), 'text/plain;charset=utf-8'); msg.textContent = 'Файл .txt завантажено.'; }) }, 'Файл .txt'),
+        h('button', { class: 'ghost', type: 'button', onclick: go(() => { saveFile('ducky-komora-' + stamp() + '.csv', exportCsv(arch.checked), 'text/csv;charset=utf-8'); msg.textContent = 'Файл .csv завантажено. Відкривається в Excel і Google Таблицях.'; }) }, 'Таблиця .csv'),
+        h('button', { class: 'ghost', type: 'button', onclick: go(() => { saveFile('ducky-rezerv-' + stamp() + '.json', JSON.stringify({ app: 'ducky', exported: stamp(), products: state.products, archive: state.archive || [], receipts: state.receipts, recipes: state.recipes, menu: state.menu }, null, 2), 'application/json'); msg.textContent = 'Резервну копію .json завантажено.'; }) }, 'Копія .json')),
+      msg);
+  }
+
   const origPantry = VIEWS.pantry;
   VIEWS.pantry = () => {
     const out = origPantry();
     out.splice(3, 0, todayCard());
     const fc = freezerCard();
     if (fc) { const ai = out.findIndex((el) => el && el.classList && el.classList.contains('archive')); out.splice(ai < 0 ? out.length : ai, 0, fc); }
+    out.push(exportCard());
     return out;
   };
   const origRecipes = VIEWS.recipes;
@@ -484,7 +549,7 @@
   }
   function listCard() {
     const ta = h('textarea', { rows: 5, placeholder: 'Наприклад:\nмолоко 2 л\nяйця 10 шт\nсир пармезан 200 г до 15.10\nгречка 1 кг', 'aria-label': 'Список продуктів' });
-    const store = h('input', { placeholder: 'Магазин (необов\'язково)', 'aria-label': 'Магазин для всіх' });
+    const store = h('input', { list: 'dl-stores', autocomplete: 'off', placeholder: 'Магазин (необов\'язково)', 'aria-label': 'Магазин для всіх' });
     const msg = h('p', { class: 'note', role: 'status', style: 'margin:12px 0 0' });
     const undo = h('span', {});
     const btn = h('button', { class: 'primary', type: 'button', onclick: async () => {
@@ -524,10 +589,10 @@
     let closeFn = null;
     const f = { name: p.name, qty: p.qty || '', weight: p.weight || '', store: p.store || '', price: p.price == null ? '' : String(p.price), exp: p.exp || '' };
     const msg = h('p', { class: 'note', role: 'status', style: 'margin:8px 0 0' });
-    const inp = (label, k, attrs = {}) => h('label', {}, label, h('input', { value: f[k], ...attrs, oninput: (e) => { f[k] = e.target.value; } }));
+    const inp = (label, k, attrs = {}) => h('label', {}, label, k === 'qty' ? qtyInput({ value: f[k], onInput: (v) => { f[k] = v; } }) : h('input', { value: f[k], ...attrs, oninput: (e) => { f[k] = e.target.value; } }));
     const body = h('div', {},
       h('div', { style: 'display:grid;grid-template-columns:1fr 1fr;gap:12px' },
-        h('div', { style: 'grid-column:1/-1' }, inp('Продукт', 'name', { list: 'dl-products', autocomplete: 'off' })), inp('Кількість', 'qty', { placeholder: '2 шт' }), inp('Вага / об\'єм', 'weight', { placeholder: '500 г' }), inp('Магазин', 'store'),
+        h('div', { style: 'grid-column:1/-1' }, inp('Продукт', 'name', { list: 'dl-products', autocomplete: 'off' })), inp('Кількість', 'qty', { placeholder: '2 шт' }), inp('Вага / об\'єм', 'weight', { placeholder: '500 г' }), inp('Магазин', 'store', { list: 'dl-stores', autocomplete: 'off' }),
         inp('Ціна, ₴', 'price', { type: 'number', min: '0', step: '0.01' }), inp('Придатний до', 'exp', { type: 'date' })),
       h('div', { class: 'toolbar', style: 'margin-top:16px' },
         h('button', { class: 'primary', type: 'button', onclick: () => {
@@ -582,14 +647,14 @@
     const draw = () => {
       box.replaceChildren(...lines.map((l, i) => h('div', { class: 'line' },
         ...[['name', 'Продукт', 'text'], ['qty', 'Кількість', 'text'], ['weight', 'Вага / об\'єм', 'text'], ['price', 'Ціна, ₴', 'number'], ['exp', 'Придатний до', 'date']].map(([k, ph, type]) =>
-          h('input', { 'aria-label': ph, placeholder: ph, type, list: k === 'name' ? 'dl-products' : null, autocomplete: k === 'name' ? 'off' : null, value: l[k], step: type === 'number' ? '0.01' : null, min: type === 'number' ? '0' : null, oninput: (e) => { l[k] = e.target.value; upd(); } })),
+          k === 'qty' ? qtyInput({ value: l.qty, onInput: (v) => { l.qty = v; } }) : h('input', { 'aria-label': ph, placeholder: ph, type, list: k === 'name' ? 'dl-products' : null, autocomplete: k === 'name' ? 'off' : null, value: l[k], step: type === 'number' ? '0.01' : null, min: type === 'number' ? '0' : null, oninput: (e) => { l[k] = e.target.value; upd(); } })),
         h('button', { class: 'link', type: 'button', onclick: () => { lines.splice(i, 1); draw(); upd(); } }, 'Видалити'))));
     };
     draw(); upd();
     let armed = false;
     const body = h('div', {},
       h('div', { style: 'display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px' },
-        h('label', {}, 'Магазин', h('input', { value: f.store, oninput: (e) => { f.store = e.target.value; } })),
+        h('label', {}, 'Магазин', h('input', { list: 'dl-stores', autocomplete: 'off', value: f.store, oninput: (e) => { f.store = e.target.value; } })),
         h('label', {}, 'Дата', h('input', { type: 'date', value: f.date, oninput: (e) => { f.date = e.target.value; } }))),
       box, h('button', { class: 'ghost', type: 'button', onclick: () => { lines.push({ name: '', qty: '', weight: '', price: '', exp: '' }); draw(); } }, 'Додати позицію'),
       h('div', { style: 'display:flex;justify-content:space-between;align-items:baseline;margin:16px 0' }, h('span', { class: 'mute' }, 'РАЗОМ'), total),
@@ -651,10 +716,27 @@
     if (tbl) {
       const sc = tbl.parentElement; sc.classList.add('menu-orig');
       const orig = {}; tbl.querySelectorAll('input').forEach((i) => { orig[i.getAttribute('aria-label')] = i; });
-      const cards = h('div', { class: 'daycards' }, DAYS.map((d, di) => h('div', { class: 'daycard' },
-        h('h3', {}, DAY_FULL[di]),
-        MEALS.map(([mk, ml]) => h('label', {}, ml, h('input', { list: 'recipeTitles', value: (state.menu || {})[di + '-' + mk] || '', 'aria-label': ml + ' ' + d,
-          oninput: (e) => { const o = orig[ml + ', ' + d]; if (o) { o.value = e.target.value; o.dispatchEvent(new Event('input')); } } }))))));
+      const MEAL_ICON = { b: 'sun', l: 'bowl', d: 'moon' };
+      const today = dayIdx(0);
+      const byTitle = new Map(state.recipes.map((r) => [norm(r.title), r]));
+      const statusEl = (title) => {
+        const t = String(title || '').trim();
+        if (!t) return h('span', { class: 'st no' }, 'не заплановано');
+        const r = byTitle.get(norm(t));
+        if (!r) return h('span', { class: 'st no' }, 'немає рецепта');
+        const miss = r.ings.filter((i) => !hasIng(i)).length;
+        return miss === 0 ? h('span', { class: 'st ok' }, icon('check'), 'все є') : h('span', { class: 'st bad' }, icon('cart'), 'докупити ' + miss);
+      };
+      const cards = h('div', { class: 'daycards' }, DAYS.map((d, di) => h('div', { class: 'daycard' + (di === today ? ' today' : '') },
+        h('header', {}, h('b', {}, DAY_FULL[di]), h('span', {}, di === today ? 'сьогодні' : '')),
+        MEALS.map(([mk, ml]) => {
+          const st = h('div', { class: 'st-wrap' }, statusEl((state.menu || {})[di + '-' + mk]));
+          return h('div', { class: 'mrow' }, h('span', { class: 'mi', title: ml }, icon(MEAL_ICON[mk])),
+            h('div', { class: 'mb' },
+              h('input', { list: 'recipeTitles', placeholder: ml, value: (state.menu || {})[di + '-' + mk] || '', 'aria-label': ml + ' ' + d,
+                oninput: (e) => { const o = orig[ml + ', ' + d]; if (o) { o.value = e.target.value; o.dispatchEvent(new Event('input')); } st.replaceChildren(statusEl(e.target.value)); } }),
+              st));
+        }))));
       sc.parentElement.insertBefore(cards, sc);
     }
     return out;
@@ -676,6 +758,6 @@
     return out;
   };
 
-  Object.assign(X, { editProduct, editRecipe, editReceipt, parseListLocal, toggleFreeze, priceModal, shoppingItems, minShortages, parseQty, unitTable, todayPicks, thawTips });
+  Object.assign(X, { exportText, exportCsv, editProduct, editRecipe, editReceipt, parseListLocal, toggleFreeze, priceModal, shoppingItems, minShortages, parseQty, unitTable, todayPicks, thawTips });
   render();
 })();

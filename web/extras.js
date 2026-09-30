@@ -168,7 +168,7 @@
     const msg = h('p', { class: 'note', role: 'status', style: 'margin:8px 0 0' });
     const showQty = !!p.qty || !p.weight;
     const showWeight = !!p.weight || !p.qty;
-    const leftQty = h('input', { placeholder: 'Скільки штук залишилось', 'aria-label': 'Залишилось (кількість)' });
+    const leftQty = qtyInput({ value: '' });
     const leftW = h('input', { placeholder: q && q.unit && fracOnWeight ? 'Наприклад 150 ' + q.unit : 'Скільки залишилось (г, мл)', 'aria-label': 'Залишилось (вага)' });
     const done = () => { save(); closeFn(); render(); };
     const target = fracOnWeight || !showQty ? leftW : leftQty;
@@ -199,7 +199,7 @@
     const rows = [];
     for (const ing of r.ings) {
       const k = norm(ing);
-      const cands = state.products.filter((p) => { const n = norm(p.name); return n === k || n.includes(k) || k.includes(n); })
+      const cands = state.products.filter((p) => foodMatch(ing, p.name))
         .sort((a, b) => (a.exp || '9999').localeCompare(b.exp || '9999'));
       if (cands.length && !rows.some((x) => x.p === cands[0])) rows.push({ ing, p: cands[0] });
     }
@@ -290,10 +290,10 @@
       const info = await lookupBarcode(code);
       msg.textContent = info ? 'Знайдено (' + info.source + '). Перевірте й додайте.' : 'У базі немає такого товару. Введіть назву, ми запам\'ятаємо її.';
       const f = { name: info ? info.name : '', qty: info ? info.qty || '' : '', weight: info ? info.weight || '' : '', store: '', price: '', exp: '' };
-      const inp = (label, k, attrs = {}) => h('label', {}, label, h('input', { value: f[k], ...attrs, oninput: (e) => { f[k] = e.target.value; } }));
+      const inp = (label, k, attrs = {}) => h('label', {}, label, k === 'qty' ? qtyInput({ value: f[k], onInput: (v) => { f[k] = v; } }) : h('input', { value: f[k], ...attrs, oninput: (e) => { f[k] = e.target.value; } }));
       box.replaceChildren(h('div', { class: 'row', style: 'display:grid;grid-template-columns:1fr 1fr;gap:12px' },
         h('div', { style: 'grid-column:1/-1' }, inp('Продукт', 'name', { required: true, list: 'dl-products', autocomplete: 'off' })),
-        inp('Кількість', 'qty', { placeholder: '1 шт' }), inp('Вага / об\'єм', 'weight', { placeholder: '500 г' }), inp('Магазин', 'store'),
+        inp('Кількість', 'qty', { placeholder: '1 шт' }), inp('Вага / об\'єм', 'weight', { placeholder: '500 г' }), inp('Магазин', 'store', { list: 'dl-stores', autocomplete: 'off' }),
         inp('Ціна, ₴', 'price', { type: 'number', min: '0', step: '0.01' }), inp('Придатний до', 'exp', { type: 'date' })),
         h('button', { class: 'primary', type: 'button', style: 'margin-top:16px', onclick: () => {
           if (!f.name.trim()) { msg.textContent = 'Вкажіть назву продукту.'; return; }
@@ -368,7 +368,7 @@
     const p = profile();
     const ban = [...words(p.allergies), ...words(p.avoid)];
     return state.recipes.filter((r) => {
-      if (ban.length && r.ings.some((i) => ban.some((b) => norm(i).includes(b)))) return false;
+      if (ban.length && r.ings.some((i) => ban.some((b) => norm(i).includes(b) || foodMatch(b, i)))) return false;
       if (p.appliances.length && r.tech && r.tech !== 'Плита' && !p.appliances.includes(r.tech)) return false;
       return true;
     });
@@ -380,7 +380,7 @@
     const p = profile();
     const likes = words(p.likes);
     const have = pantryNames();
-    const soonSet = new Set(state.products.filter((x) => { const d = daysLeft(x.exp); return d !== null && d <= 4; }).map((x) => norm(x.name)));
+    const soonProducts = state.products.filter((x) => { const d = daysLeft(x.exp); return d !== null && d <= 4; });
     const prices = latestPrices();
     const budget = effectiveBudget();
     const byTitle = new Map(state.recipes.map((r) => [norm(r.title), r]));
@@ -401,8 +401,8 @@
           const fresh = r.ings.filter((i) => !have.has(norm(i)) && !need.has(norm(i)));
           const addCost = fresh.reduce((s, n) => s + (priceOf(n) || 0), 0);
           let sc = fresh.length * 10 + (used.get(r.id) || 0) * 15;
-          sc -= r.ings.filter((i) => soonSet.has(norm(i))).length * 6;
-          sc -= r.ings.filter((i) => likes.some((l) => norm(i).includes(l))).length * 3;
+          sc -= r.ings.filter((i) => soonProducts.some((x) => foodMatch(i, x.name))).length * 6;
+          sc -= r.ings.filter((i) => likes.some((l) => norm(i).includes(l) || foodMatch(l, i))).length * 3;
           if (r.meal && r.meal !== mk) sc += 20;
           if (prev && prev.id === r.id) sc += 30;
           if (budget && cost + addCost > budget) sc += 25;
