@@ -72,12 +72,12 @@ module.exports = async (req, res) => {
     if (b.url) {
       const html = await safeFetch(String(b.url).slice(0, 500));
       const local = parseRecipeHtml(html, Number(b.servings) || 0, 'uk');          // спершу без ШІ: розмітка рецепта на самій сторінці
-      if (local) { const { via, ...recipe } = local; return send(200, { recipe, source: 'site', via }); }
-      if (b.noAi || !(process.env.GEMINI_API_KEY || process.env.ANTHROPIC_API_KEY)) return send(422, { error: 'На цій сторінці немає готової розмітки рецепта. Вставте текст рецепта (інгредієнти й кроки), або підключіть ШІ.' });
+      if (local) { const { via, ...recipe } = local; return send(res, 200, { recipe, source: 'site', via }); }
+      if (b.noAi || !(process.env.GEMINI_API_KEY || process.env.ANTHROPIC_API_KEY)) return send(res, 422, { error: 'На цій сторінці немає готової розмітки рецепта. Вставте текст рецепта (інгредієнти й кроки), або підключіть ШІ.' });
       text = htmlToText(html);
     } else if (b.text) {
       const local = parseRecipeText(String(b.text).slice(0, 15000), Number(b.servings) || 0, 'uk');
-      if (local) { const { via, ...recipe } = local; return send(200, { recipe, source: 'site', via }); }
+      if (local) { const { via, ...recipe } = local; return send(res, 200, { recipe, source: 'site', via }); }
       text = String(b.text).slice(0, 15000);
     }
     if (text.trim().length < 20) return send(res, 400, { error: 'Вставте посилання або текст рецепта.' });
