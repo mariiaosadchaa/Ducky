@@ -450,7 +450,7 @@
       if (v.length < 8) { msg.textContent = 'Вставте посилання або текст.'; return; }
       btn.disabled = true; msg.textContent = 'Розбираємо рецепт…'; out.replaceChildren();
       try {
-        const res = await X.callApi('/api/import-recipe', /^https?:\/\/\S+$/i.test(v) ? { url: v } : { text: v });
+        const res = await X.callApi('/api/import-recipe', /^https?:\/\/\S+$/i.test(v) ? { url: v, servings: Number((state.profile || {}).servings) || 2 } : { text: v, servings: Number((state.profile || {}).servings) || 2 });
         const r = res.recipe;
         const buy = r.ings.filter((i) => !hasIng(i));
         msg.textContent = res.source === 'site' ? 'Готово, розібрано без ШІ. Перевірте й збережіть.' : 'Готово (розібрано ШІ). Перевірте й збережіть.';
@@ -469,7 +469,7 @@
       btn.disabled = false;
     } }, 'Розібрати рецепт');
     return h('div', { class: 'card', style: 'margin-bottom:28px' }, h('div', { class: 'tag' }, 'Рецепт із посилання'),
-      h('p', { class: 'mute', style: 'margin:8px 0 12px' }, 'Спершу розбираємо без ШІ (розмітка сторінки), і лише якщо не вийшло, підключається ШІ.'), box, h('div', { style: 'margin-top:12px' }, btn), msg, out);
+      h('p', { class: 'mute', style: 'margin:8px 0 12px' }, 'Спершу розбираємо без ШІ, перераховуємо на ваші порції й перекладаємо українською; ШІ підключається лише якщо не вийшло.'), box, h('div', { style: 'margin-top:12px' }, btn), msg, out);
   }
 
   // ---------- що приготувати сьогодні ----------
