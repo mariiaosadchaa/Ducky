@@ -450,6 +450,73 @@
   const origRecipes = VIEWS.recipes;
   VIEWS.recipes = () => { const out = origRecipes(); out.splice(4, 0, importCard()); return out; };
 
+  // ---------- додати комору списком (ШІ або спрощений розбір) ----------
+  const cap = (t) => t.charAt(0).toUpperCase() + t.slice(1);
+  function parseListLocal(text, today) {
+    const now = new Date((today || todayISO()) + 'T00:00:00');
+    const U = '(кг|г|гр|л|мл|шт|уп|пач|пачк[а-яіїєґ]*|пляшк[а-яіїєґ]*|банк[а-яіїєґ]*|пакет[а-яіїєґ]*)';
+    const lines = String(text || '').replace(/(\d),(\d)/g, '$1.$2').split(/[\n;,]+/);
+    const out = [];
+    for (let raw of lines) {
+      let line = raw.replace(/^[\s\-–—•*·]+/, '').replace(/^\d+[.)]\s+/, '').trim();
+      if (line.length < 2) continue;
+      let exp = null; let price = null; let qty = '';
+      let m = /(?:до|термін\w*|придатн\w*)\s*(\d{1,2})[./](\d{1,2})(?:[./](\d{2,4}))?/i.exec(line);
+      if (m) {
+        let y = m[3] ? Number(m[3]) : now.getFullYear(); if (y < 100) y += 2000;
+        let d = new Date(y, Number(m[2]) - 1, Number(m[1]));
+        if (!m[3] && d < now) d = new Date(y + 1, Number(m[2]) - 1, Number(m[1]));
+        exp = localISO(d); line = line.replace(m[0], ' ');
+      }
+      m = /(\d+(?:\.\d+)?)\s*(?:грн|₴)/i.exec(line);
+      if (m) { price = Number(m[1]); line = line.replace(m[0], ' '); }
+      line = line.replace(/\s+/g, ' ').trim();
+      if ((m = new RegExp('^(\\d+(?:\\.\\d+)?)\\s*' + U + '\\.?\\s+(.+)$', 'i').exec(line))) { qty = m[1] + ' ' + m[2].toLowerCase(); line = m[3]; }
+      else if ((m = new RegExp('^(.+?)\\s*[-–:]?\\s*(\\d+(?:\\.\\d+)?)\\s*' + U + '\\.?$', 'i').exec(line))) { qty = m[2] + ' ' + m[3].toLowerCase(); line = m[1]; }
+      else if ((m = /^(.+?)\s*[xх×]\s*(\d+)$/i.exec(line))) { qty = m[2] + ' шт'; line = m[1]; }
+      else if ((m = /^(.+?)\s+(\d+(?:\.\d+)?)$/.exec(line))) { qty = m[2]; line = m[1]; }
+      const name = line.replace(/[\s:–\-.]+$/, '').trim();
+      if (name.length < 2 || /^\d+$/.test(name)) continue;
+      out.push({ name: cap(name), qty, exp, store: '', price });
+    }
+    return out.slice(0, 120);
+  }
+  function listCard() {
+    const ta = h('textarea', { rows: 5, placeholder: 'Наприклад:\nмолоко 2 л\nяйця 10 шт\nсир пармезан 200 г до 15.10\nгречка 1 кг', 'aria-label': 'Список продуктів' });
+    const store = h('input', { placeholder: 'Магазин (необов\'язково)', 'aria-label': 'Магазин для всіх' });
+    const msg = h('p', { class: 'note', role: 'status', style: 'margin:12px 0 0' });
+    const undo = h('span', {});
+    const btn = h('button', { class: 'primary', type: 'button', onclick: async () => {
+      const text = ta.value.trim();
+      if (text.length < 2) { msg.textContent = 'Вставте або впишіть список.'; return; }
+      btn.disabled = true; undo.replaceChildren(); msg.textContent = 'Розпізнаємо список…';
+      let items; let viaAi = true;
+      try { items = (await X.callApi('/api/parse-list', { text, today: todayISO() })).items; }
+      catch (e) { viaAi = false; items = parseListLocal(text, todayISO()); msg.textContent = 'ШІ недоступний (' + e.message + ') Розібрали спрощено. '; }
+      btn.disabled = false;
+      if (!items.length) { msg.textContent = 'Не вдалося знайти продукти. Впишіть по одному на рядок: «молоко 2 л».'; return; }
+      const have = new Set(state.products.map((p) => norm(p.name)));
+      const dup = items.filter((i) => have.has(norm(i.name))).map((i) => i.name);
+      const ids = [];
+      for (const i of items) {
+        const id = uid(); ids.push(id);
+        state.products.push({ id, name: i.name, qty: i.qty || '', store: i.store || store.value.trim(), price: i.price == null ? null : i.price, bought: todayISO(), exp: i.exp || null });
+      }
+      save(); ta.value = '';
+      render();
+      const m2 = document.querySelector('#listMsg');
+      if (m2) {
+        m2.textContent = 'Додано в комору: ' + items.length + (viaAi ? '' : ' (спрощений розбір, перевірте)') + '.' + (dup.length ? ' Уже були в коморі: ' + dup.slice(0, 5).join(', ') + ' (додано окремими рядками).' : '') + ' ';
+        m2.append(h('button', { class: 'link', type: 'button', onclick: () => {
+          state.products = state.products.filter((p) => !ids.includes(p.id)); save(); render();
+        } }, 'Скасувати'));
+      }
+    } }, 'Розпізнати й додати в комору');
+    return h('div', { class: 'card', style: 'margin-bottom:24px' }, h('div', { class: 'tag' }, 'Додати списком'),
+      h('p', { class: 'mute', style: 'margin:8px 0 12px' }, 'Вставте свій список як є: ШІ розпізнає продукти, кількість і терміни та сам заповнить комору.'),
+      ta, h('div', { style: 'display:grid;gap:12px;margin-top:12px' }, store, btn), msg, h('p', { id: 'listMsg', class: 'note', role: 'status', style: 'margin:8px 0 0' }));
+  }
+
   // ---------- мобільна версія (iPhone) ----------
   const mq = window.matchMedia('(max-width:700px)');
   const ICON = {
@@ -513,8 +580,12 @@
       h('button', { class: 'link', type: 'button', onclick: (e) => { store.set('ducky.iosTip', 1); e.target.closest('.tip').remove(); } }, 'Зрозуміло'));
   }
   const origPantry2 = VIEWS.pantry;
-  VIEWS.pantry = () => { const out = origPantry2(); const t = iosBanner(); if (t) out.splice(2, 0, t); return out; };
+  VIEWS.pantry = () => {
+    const out = origPantry2(); const t = iosBanner(); if (t) out.splice(2, 0, t);
+    const gi = out.findIndex((el) => el && el.classList && el.classList.contains('grid')); out.splice(gi < 0 ? out.length : gi, 0, listCard());
+    return out;
+  };
 
-  Object.assign(X, { toggleFreeze, priceModal, shoppingItems, minShortages, parseQty, unitTable, todayPicks, thawTips });
+  Object.assign(X, { parseListLocal, toggleFreeze, priceModal, shoppingItems, minShortages, parseQty, unitTable, todayPicks, thawTips });
   render();
 })();
