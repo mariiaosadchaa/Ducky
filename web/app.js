@@ -14,7 +14,7 @@ const SESSION_KEY = 'ducky.session';
 const THEME_KEY = 'ducky.theme';
 const SCOPE_KEY = 'ducky.scope.';
 
-const defaults = () => ({ products: [], receipts: [], recipes: [], menu: {}, budget: '', tab: 'pantry', profile: {}, notified: {} });
+const defaults = () => ({ products: [], receipts: [], recipes: [], menu: {}, budget: '', tab: 'pantry', profile: {}, notified: {}, archive: [] });
 let state = null;      // дані поточного користувача
 let user = null;       // { id, name, email }
 let authMode = 'register';
@@ -357,7 +357,7 @@ function viewPantry() {
     field('Придатний до', 'exp', { type: 'date' }),
     h('button', { class: 'primary', type: 'submit' }, 'Додати'));
 
-  const items = [...state.products].sort((a, b) => (a.exp || '9999').localeCompare(b.exp || '9999'));
+  const items = state.products.filter((p) => !p.frozen).sort((a, b) => (a.exp || '9999').localeCompare(b.exp || '9999'));
   const table = items.length
     ? h('div', { class: 'scroll' }, h('table', {},
       h('tr', {}, ['Продукт', 'Кількість', 'Магазин', 'Придатний до', ''].map((t) => h('th', {}, t))),
@@ -367,9 +367,13 @@ function viewPantry() {
           h('td', { class: 'name' }, p.name), h('td', { class: 'mute' }, p.qty || '—'),
           h('td', { class: 'mute' }, p.store || '—'),
           h('td', { class: dl !== null && dl <= 3 ? 'warn' : 'mute' }, fmtDate(p.exp)),
-          h('td', {}, h('button', { class: 'link', type: 'button', onclick: () => {
-            state.products = state.products.filter((x) => x.id !== p.id); save(); render();
-          } }, 'Прибрати')));
+          h('td', { class: 'acts' },
+            window.DuckyExtras ? h('button', { class: 'link', type: 'button', onclick: () => window.DuckyExtras.useProduct(p) }, 'Готую') : null,
+            window.DuckyExtras && window.DuckyExtras.toggleFreeze ? h('button', { class: 'link', type: 'button', onclick: () => window.DuckyExtras.toggleFreeze(p) }, 'Заморозити') : null,
+            h('button', { class: 'link', type: 'button', onclick: () => {
+              if (window.DuckyExtras) window.DuckyExtras.archiveProduct(p, 'removed'); else state.products = state.products.filter((x) => x.id !== p.id);
+              save(); render();
+            } }, 'Прибрати')));
       })))
     : h('p', { class: 'empty' }, 'У ставку порожньо. Додайте продукт вище або збережіть чек.');
 
@@ -467,6 +471,7 @@ function viewRecipes() {
         h('div', { class: 'kv' }, h('span', { class: 'mute' }, 'Є вдома'), h('span', {}, got + ' з ' + r.ings.length)),
         h('div', { class: 'kv' }, h('span', { class: 'mute' }, 'Докупити'), h('span', {}, buy.length ? buy.join(', ') : 'нічого')),
         h('div', { class: 'kv' }, h('span', { class: 'mute' }, 'Вартість докупівлі'), h('span', { class: 'gold-t' }, buy.length ? cost : '0 ₴')),
+        window.DuckyExtras ? h('button', { class: 'ghost', type: 'button', onclick: () => window.DuckyExtras.cookRecipe(r) }, 'Приготувала') : null,
         r.steps && r.steps.length ? h('details', { class: 'steps' }, h('summary', {}, 'Приготування'), h('ol', {}, r.steps.map((t) => h('li', {}, t)))) : null,
         h('button', { class: 'link', type: 'button', onclick: () => { state.recipes = state.recipes.filter((x) => x.id !== r.id); save(); render(); } }, 'Видалити'));
     }))
@@ -527,7 +532,7 @@ function viewMenu() {
       budgetBox.replaceChildren(
         h('label', { style: 'max-width:240px' }, 'Тижневий бюджет, ₴',
           h('input', { type: 'number', min: '0', value: state.budget, oninput: (e) => { state.budget = e.target.value; save(); drawShop(); } })),
-        r ? h('button', { class: 'link', type: 'button', onclick: () => { state.budgetMode = 'rivna'; save(); refresh(); } }, 'Взяти з Rivna app') : null);
+        ...(r ? [h('button', { class: 'link', type: 'button', onclick: () => { state.budgetMode = 'rivna'; save(); refresh(); } }, 'Взяти з Rivna app')] : []));
     }
   }
   drawBudget();
@@ -697,6 +702,7 @@ function applyTheme() {
   const dark = saved ? saved === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
   $theme.textContent = dark ? 'Світла тема' : 'Темна тема';
+  const tc = document.querySelector('meta[name="theme-color"]'); if (tc) tc.content = dark ? '#0b1220' : '#f4f6fb';
   if (window.DuckyFX) window.DuckyFX.refreshColors();
 }
 

@@ -142,6 +142,106 @@
     return close;
   }
 
+  // ---------- залишки та архів ----------
+  const REASONS = { used: 'використано', thrown: 'викинуто', removed: 'прибрано' };
+  function archiveProduct(p, reason) {
+    state.products = state.products.filter((x) => x.id !== p.id);
+    const arch = state.archive || (state.archive = []);
+    arch.unshift({ ...p, archivedAt: todayISO(), reason });
+    if (arch.length > 500) arch.length = 500;
+  }
+  function splitQty(q) {
+    const m = /^(\d+(?:[.,]\d+)?)\s*(.*)$/.exec(String(q || '').trim());
+    return m ? { n: parseFloat(m[1].replace(',', '.')), unit: m[2], comma: m[1].includes(',') } : null;
+  }
+  function fmtQty(n, unit, comma) {
+    let t = String(Math.round(n * 1000) / 1000);
+    if (comma) t = t.replace('.', ',');
+    return t + (unit ? ' ' + unit : '');
+  }
+  const isZero = (v) => { const q = splitQty(v); return q && q.n === 0; };
+
+  function useProduct(p) {
+    let closeFn = null;
+    const q = splitQty(p.qty);
+    const msg = h('p', { class: 'note', role: 'status', style: 'margin:8px 0 0' });
+    const left = h('input', { placeholder: q && q.unit ? 'Наприклад 150 ' + q.unit : 'Скільки залишилось', 'aria-label': 'Залишилось' });
+    const done = () => { save(); closeFn(); render(); };
+    const frac = q ? h('div', { class: 'toolbar', style: 'margin:10px 0' }, h('span', { class: 'mute' }, 'Залишилось:'),
+      [['¾', 0.75], ['½', 0.5], ['¼', 0.25]].map(([t, k]) => h('button', { class: 'ghost', type: 'button', onclick: () => { left.value = fmtQty(q.n * k, q.unit, q.comma); } }, t))) : null;
+    const body = h('div', {},
+      h('p', { class: 'mute', style: 'margin:0 0 10px' }, 'Було: ' + (p.qty || 'не вказано') + (p.store ? ' · ' + p.store : '')),
+      h('label', {}, 'Скільки залишилось', left), frac,
+      h('div', { class: 'toolbar', style: 'margin-top:14px' },
+        h('button', { class: 'primary', type: 'button', onclick: () => {
+          const v = left.value.trim();
+          if (!v) { msg.textContent = 'Впишіть, скільки залишилось.'; return; }
+          if (isZero(v)) { archiveProduct(p, 'used'); return done(); }
+          p.qty = v; done();
+        } }, 'Зберегти залишок'),
+        h('button', { class: 'ghost', type: 'button', onclick: () => { archiveProduct(p, 'used'); done(); } }, 'Усе використано'),
+        h('button', { class: 'link', type: 'button', onclick: () => { archiveProduct(p, 'thrown'); done(); } }, 'Викинула')),
+      msg);
+    closeFn = openModal(p.name, body);
+  }
+
+  function cookRecipe(r) {
+    let closeFn = null;
+    const rows = [];
+    for (const ing of r.ings) {
+      const k = norm(ing);
+      const cands = state.products.filter((p) => { const n = norm(p.name); return n === k || n.includes(k) || k.includes(n); })
+        .sort((a, b) => (a.exp || '9999').localeCompare(b.exp || '9999'));
+      if (cands.length && !rows.some((x) => x.p === cands[0])) rows.push({ ing, p: cands[0] });
+    }
+    if (!rows.length) { toast('У коморі немає жодного інгредієнта цього рецепта.'); return; }
+    const ctl = rows.map((row) => ({ ...row, all: h('input', { type: 'checkbox', 'aria-label': 'Усе використано' }),
+      left: h('input', { placeholder: 'не змінювати', 'aria-label': 'Залишилось: ' + row.p.name }) }));
+    const body = h('div', {},
+      h('p', { class: 'mute', style: 'margin:0 0 12px' }, 'Впишіть, скільки залишилось після приготування. Якщо продукт закінчився, поставте галочку. Порожні рядки не змінюються.'),
+      ctl.map((c) => h('div', { class: 'cook-row' },
+        h('div', {}, h('div', { class: 'name' }, c.p.name), h('div', { class: 'mute' }, 'Було: ' + (c.p.qty || 'не вказано'))),
+        c.left, h('label', { class: 'check' }, c.all, 'Усе'))),
+      h('button', { class: 'primary', type: 'button', style: 'margin-top:16px', onclick: () => {
+        let n = 0;
+        for (const c of ctl) {
+          const v = c.left.value.trim();
+          if (c.all.checked || (v && isZero(v))) { archiveProduct(c.p, 'used'); n++; }
+          else if (v) { c.p.qty = v; n++; }
+        }
+        save(); closeFn(); render();
+        toast(n ? 'Комору оновлено: ' + n + ' продуктів.' : 'Нічого не змінено.');
+      } }, 'Оновити комору'));
+    closeFn = openModal('Приготувала: ' + r.title, body);
+  }
+
+  function archiveCard() {
+    const arch = state.archive || [];
+    const box = h('details', { class: 'card archive' });
+    const draw = () => {
+      const list = state.archive || [];
+      const arm = { v: false };
+      box.replaceChildren(h('summary', {}, 'Архів' + (list.length ? ' (' + list.length + ')' : '')),
+        list.length ? h('div', { class: 'scroll' }, h('table', {},
+          h('tr', {}, ['Продукт', 'Кількість', 'Магазин', 'Коли', 'Що сталось', ''].map((t) => h('th', {}, t))),
+          list.slice(0, 50).map((a) => h('tr', {},
+            h('td', { class: 'name' }, a.name), h('td', { class: 'mute' }, a.qty || '—'), h('td', { class: 'mute' }, a.store || '—'),
+            h('td', { class: 'mute' }, fmtDate(a.archivedAt)), h('td', { class: a.reason === 'thrown' ? 'warn' : 'mute' }, REASONS[a.reason] || '—'),
+            h('td', {}, h('button', { class: 'link', type: 'button', onclick: () => {
+              const { archivedAt, reason, ...prod } = a;
+              state.archive = state.archive.filter((x) => x !== a); state.products.push(prod); save(); render();
+            } }, 'Повернути')))))) : h('p', { class: 'empty' }, 'Архів порожній. Сюди потрапляють продукти, які ви використали, викинули або прибрали.'),
+        list.length > 50 ? h('p', { class: 'note' }, 'Показано 50 останніх із ' + list.length + '.') : null,
+        list.length ? h('button', { class: 'link', type: 'button', onclick: (e) => {
+          if (!arm.v) { arm.v = true; e.target.textContent = 'Натисніть ще раз, щоб очистити назавжди'; return; }
+          state.archive = []; save(); render();
+        } }, 'Очистити архів') : null);
+    };
+    draw();
+    if (arch.length && location.hash === '#archive') box.open = true;
+    return box;
+  }
+
   // ---------- штрихкод ----------
   async function lookupBarcode(code) {
     const known = (state.barcodes || {})[code];
@@ -158,13 +258,14 @@
   }
 
   function scanBarcode() {
-    let stream = null; let stopped = false; let closeFn = null;
-    const stop = () => { stopped = true; if (stream) stream.getTracks().forEach((t) => t.stop()); stream = null; };
+    let stream = null; let stopped = false; let closeFn = null; let zx = null;
+    const stop = () => { stopped = true; if (zx) { try { zx.reset(); } catch (e) { /* ігноруємо */ } zx = null; } if (stream) stream.getTracks().forEach((t) => t.stop()); stream = null; };
     const msg = h('p', { class: 'note', role: 'status' });
     const box = h('div', {});
     const video = h('video', { class: 'scan-video', playsinline: true, muted: true, autoplay: true });
     const manual = h('input', { inputmode: 'numeric', placeholder: 'Наприклад 4820000000000', 'aria-label': 'Штрихкод' });
-    const supported = 'BarcodeDetector' in window && navigator.mediaDevices && navigator.mediaDevices.getUserMedia;
+    const native = 'BarcodeDetector' in window;
+    const supported = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
 
     async function handle(code) {
       code = String(code).replace(/\D/g, '');
@@ -189,7 +290,7 @@
     }
 
     const content = h('div', {},
-      supported ? video : h('p', { class: 'note' }, 'Цей браузер не вміє читати штрихкоди з камери. Введіть цифри вручну (працює в Chrome на Android та десктопі).'),
+      supported ? video : h('p', { class: 'note' }, 'Камера недоступна в цьому браузері. Введіть цифри вручну.'),
       box,
       h('div', { class: 'row', style: 'display:flex;gap:8px;margin-top:12px;align-items:flex-end' },
         h('label', { style: 'flex:1' }, 'Або введіть код вручну', manual),
@@ -199,6 +300,17 @@
     if (!supported) return;
     (async () => {
       try {
+        if (!native) {
+          // Safari на iPhone не має BarcodeDetector: підвантажуємо ZXing (лише при потребі)
+          if (!window.ZXing) await new Promise((res, rej) => { const sc = document.createElement('script'); sc.src = 'vendor/zxing.js'; sc.onload = res; sc.onerror = () => rej(new Error('zxing')); document.head.append(sc); });
+          if (stopped) return;
+          const Z = window.ZXing;
+          const hints = new Map([[Z.DecodeHintType.POSSIBLE_FORMATS, [Z.BarcodeFormat.EAN_13, Z.BarcodeFormat.EAN_8, Z.BarcodeFormat.UPC_A, Z.BarcodeFormat.UPC_E]], [Z.DecodeHintType.TRY_HARDER, true]]);
+          zx = new Z.BrowserMultiFormatReader(hints, 300);
+          msg.textContent = 'Наведіть камеру на штрихкод.';
+          await zx.decodeFromConstraints({ video: { facingMode: 'environment' }, audio: false }, video, (res) => { if (res && !stopped) handle(res.getText()); });
+          return;
+        }
         stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
         if (stopped) { stop(); return; }
         video.srcObject = stream; await video.play();
@@ -495,6 +607,7 @@
         h('button', { class: 'ghost', type: 'button', onclick: scanBarcode }, 'Сканувати штрихкод'),
         h('span', { class: 'mute' }, 'Наведіть камеру на штрихкод: назва підставиться сама, ціну й термін ви впишете.')));
     out.splice(3, 0, bar);
+    out.push(archiveCard());
     return out;
   };
   const origScan = VIEWS.scan;
@@ -513,6 +626,6 @@
   setInterval(() => checkExpiry(false), 30000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) checkExpiry(false); });
 
-  window.DuckyExtras = { autoMenu, scanBarcode, scanReceipt, suggestRecipes, checkExpiry, weeklyTotals, eligibleRecipes };
+  window.DuckyExtras = { openModal, toast, callApi, useProduct, cookRecipe, archiveProduct, autoMenu, scanBarcode, scanReceipt, suggestRecipes, checkExpiry, weeklyTotals, eligibleRecipes };
   render();   // перемальовуємо: з'явились нові вкладки
 })();

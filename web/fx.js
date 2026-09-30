@@ -12,7 +12,8 @@
   // ----- іскри, що пливуть угору -----
   let col = '217,191,140';
   const refreshColors = () => { col = getComputedStyle(root).getPropertyValue('--spark').trim() || col; };
-  if (!reduce) {
+  const coarse = window.matchMedia('(pointer: coarse)').matches;
+  if (!reduce && !coarse) {
     const cv = document.createElement('canvas');
     cv.id = 'sparks'; cv.setAttribute('aria-hidden', 'true'); document.body.prepend(cv);
     const ctx = cv.getContext('2d');
@@ -60,33 +61,11 @@
     if (c && !c.contains(e.relatedTarget)) { c.style.setProperty('--rx', '0deg'); c.style.setProperty('--ry', '0deg'); }
   });
 
-  // ----- хвилі від кліку -----
-  if (!reduce) {
-    document.addEventListener('pointerdown', (e) => {
-      const r = document.createElement('div');
-      r.className = 'ripple'; r.style.left = e.clientX + 'px'; r.style.top = e.clientY + 'px';
-      r.innerHTML = '<i></i><i></i><i></i>';
-      document.body.append(r);
-      setTimeout(() => r.remove(), 1800);
-    }, { passive: true });
-  }
-
-
-  // ----- світло за курсором + паралакс -----
+  // ----- паралакс і магнітні кнопки (без кіл за курсором) -----
   if (!reduce && window.matchMedia('(pointer: fine)').matches) {
-    const glow = document.createElement('div');
-    glow.className = 'cursor-glow'; glow.setAttribute('aria-hidden', 'true'); document.body.prepend(glow);
-    let tx = 0, ty = 0, cx = 0, cy = 0, running = false;
-    const loop = () => {
-      cx += (tx - cx) * 0.12; cy += (ty - cy) * 0.12;
-      glow.style.transform = 'translate3d(' + cx.toFixed(1) + 'px,' + cy.toFixed(1) + 'px,0)';
-      if (Math.abs(tx - cx) + Math.abs(ty - cy) > 0.5) requestAnimationFrame(loop); else running = false;
-    };
     document.addEventListener('pointermove', (e) => {
-      tx = e.clientX; ty = e.clientY; glow.classList.add('on');
       root.style.setProperty('--px', ((e.clientX / window.innerWidth - 0.5) * 2).toFixed(3));
       root.style.setProperty('--py', ((e.clientY / window.innerHeight - 0.5) * 2).toFixed(3));
-      if (!running) { running = true; requestAnimationFrame(loop); }
       const btn = e.target.closest && e.target.closest('button.primary, button.ghost');
       if (btn) {
         const r = btn.getBoundingClientRect();
@@ -98,7 +77,6 @@
       const btn = e.target.closest && e.target.closest('button.primary, button.ghost');
       if (btn && !btn.contains(e.relatedTarget)) { btn.style.setProperty('--tx', '0px'); btn.style.setProperty('--ty', '0px'); }
     });
-    document.addEventListener('mouseleave', () => glow.classList.remove('on'));
   }
 
   // ----- вибух іскор на головних кнопках -----
