@@ -458,8 +458,8 @@
         out.replaceChildren(h('div', { class: 'card' },
           h('div', { class: 'tag' }, r.tech || 'Імпорт'), h('h3', {}, r.title),
           h('div', { class: 'mute' }, [r.minutes && r.minutes + ' хв', r.servings && r.servings + ' порц.'].filter(Boolean).join(' · ') || ' '),
-          h('div', { class: 'kv' }, h('span', { class: 'mute' }, 'Інгредієнти'), h('span', {}, r.ings.join(', '))),
-          h('div', { class: 'kv' }, h('span', { class: 'mute' }, 'Докупити'), h('span', {}, buy.length ? buy.join(', ') : 'нічого')),
+          h('div', { class: 'kv', style: 'align-items:flex-start' }, h('span', { class: 'mute' }, 'Інгредієнти'), h('ul', { style: 'list-style:none;margin:0;padding:0;text-align:right' }, r.ings.map((i) => h('li', {}, i)))),
+          h('div', { class: 'kv', style: 'align-items:flex-start' }, h('span', { class: 'mute' }, 'Докупити'), buy.length ? h('ul', { style: 'list-style:none;margin:0;padding:0;text-align:right' }, buy.map((i) => h('li', {}, i))) : h('span', {}, 'нічого')),
           r.steps.length ? h('details', { class: 'steps' }, h('summary', {}, 'Приготування'), h('ol', {}, r.steps.map((t) => h('li', {}, t)))) : null,
           h('button', { class: 'ghost', type: 'button', onclick: (e) => {
             state.recipes.push({ id: uid(), title: r.title, tech: r.tech, minutes: r.minutes, servings: r.servings, ings: r.ings, steps: r.steps });
