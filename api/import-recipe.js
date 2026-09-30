@@ -33,7 +33,7 @@ async function safeFetch(url, hops = 0) {
   if (!addrs.length || addrs.some((a) => isPrivateIp(a.address))) { const er = new Error('Це посилання не підходить.'); er.status = 400; throw er; }
   let r;
   try {
-    r = await fetch(u.href, { redirect: 'manual', signal: AbortSignal.timeout(8000), headers: { 'user-agent': 'DuckyBot/1.0', accept: 'text/html,application/xhtml+xml' } });
+    r = await fetch(u.href, { redirect: 'manual', signal: AbortSignal.timeout(8000), headers: { 'user-agent': 'Mozilla/5.0 (compatible; DuckyBot/1.0)', accept: 'text/html,application/xhtml+xml', 'accept-language': 'uk,ru;q=0.9,en;q=0.5' } });
   } catch (e) { const er = new Error('Сторінка не відповідає.'); er.status = 502; throw er; }
   if ([301, 302, 303, 307, 308].includes(r.status)) {
     const loc = r.headers.get('location');
@@ -41,8 +41,16 @@ async function safeFetch(url, hops = 0) {
     return safeFetch(new URL(loc, u.href).href, hops + 1);
   }
   if (!r.ok) { const er = new Error('Сторінка недоступна (' + r.status + ').'); er.status = 502; throw er; }
-  const t = await r.text();
-  return t.length > 1500000 ? t.slice(0, 1500000) : t;
+  const buf = Buffer.from(await r.arrayBuffer()).subarray(0, 1500000);
+  return decodeHtml(buf, r.headers.get('content-type'));
+}
+
+// Багато російськомовних сайтів (russianfood.com та ін.) віддають windows-1251, а не UTF-8
+function decodeHtml(buf, contentType) {
+  let cs = /charset=["']?([\w-]+)/i.exec(contentType || '');
+  if (!cs) cs = /<meta[^>]+charset=["']?([\w-]+)/i.exec(buf.subarray(0, 4096).toString('latin1'));
+  const label = cs ? cs[1].toLowerCase() : 'utf-8';
+  try { return new TextDecoder(label).decode(buf); } catch (e) { return new TextDecoder('utf-8').decode(buf); }
 }
 
 function htmlToText(html) {
@@ -81,3 +89,4 @@ module.exports = async (req, res) => {
   }
 };
 module.exports.isPrivateIp = isPrivateIp;
+module.exports.decodeHtml = decodeHtml;

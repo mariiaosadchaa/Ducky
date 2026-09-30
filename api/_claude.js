@@ -5,21 +5,38 @@
 const GEMINI_MODEL = () => process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 const CLAUDE_MODEL = () => process.env.ANTHROPIC_MODEL || 'claude-haiku-4-5-20251001';
 
+async function geminiCall(model, body) {
+  const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent';
+  return fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY }, body });
+}
+
+async function geminiFail(r) {
+  let detail = '';
+  try { const j = await r.json(); detail = String((j && j.error && j.error.message) || '').replace(/AIza[\w-]+/g, '***').slice(0, 160); } catch (e) { /* без деталей */ }
+  console.error('Gemini', r.status, detail);
+  const hint = r.status === 400 && /API key|API_KEY/i.test(detail) ? 'Ключ GEMINI_API_KEY недійсний. Створіть новий на aistudio.google.com/apikey і оновіть його у Vercel.'
+    : r.status === 400 ? 'ШІ не прийняв запит (400). ' + detail
+    : r.status === 401 || r.status === 403 ? 'Gemini відхилив ключ (' + r.status + '). Перевірте GEMINI_API_KEY у Vercel.'
+    : r.status === 404 ? 'Модель Gemini недоступна. Задайте у Vercel змінну GEMINI_MODEL, наприклад gemini-flash-latest.'
+    : r.status >= 500 ? 'Сервери Gemini зараз перевантажені. Спробуйте через хвилину.'
+    : 'ШІ тимчасово недоступний (' + r.status + ').';
+  const e = new Error(hint); e.status = 502; throw e;
+}
+
 async function viaGemini({ system, content, maxTokens }) {
   const parts = (Array.isArray(content) ? content : [{ type: 'text', text: content }]).map((c) =>
     c.type === 'image' ? { inline_data: { mime_type: c.source.media_type, data: c.source.data } } : { text: c.text });
-  const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(GEMINI_MODEL()) + ':generateContent';
-  const r = await fetch(url, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY },
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: system }] },
-      contents: [{ role: 'user', parts }],
-      generationConfig: { maxOutputTokens: maxTokens, responseMimeType: 'application/json', temperature: 0.4 },
-    }),
+  const body = JSON.stringify({
+    systemInstruction: { parts: [{ text: system }] },
+    contents: [{ role: 'user', parts }],
+    generationConfig: { maxOutputTokens: maxTokens, responseMimeType: 'application/json', temperature: 0.4 },
   });
+  let model = GEMINI_MODEL();
+  let r = await geminiCall(model, body);
+  if (r.status === 404 && !process.env.GEMINI_MODEL) r = await geminiCall('gemini-flash-latest', body);   // стару модель могли вимкнути
+  if (r.status === 500 || r.status === 503) { await new Promise((ok) => setTimeout(ok, 1200)); r = await geminiCall(model, body); }
   if (r.status === 429) { const e = new Error('Ліміт безкоштовного ШІ на зараз вичерпано. Спробуйте за хвилину.'); e.status = 429; throw e; }
-  if (!r.ok) { const e = new Error('ШІ тимчасово недоступний.'); e.status = 502; throw e; }
+  if (!r.ok) return geminiFail(r);
   const j = await r.json();
   const cand = j.candidates && j.candidates[0];
   return ((cand && cand.content && cand.content.parts) || []).map((p) => p.text || '').join('');
