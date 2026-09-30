@@ -258,6 +258,7 @@ async function logout() {
 }
 
 // Запасний варіант, поки не завантажився розумний збіг (more.js перепризначить його)
+if (typeof window.foodAlways !== 'function') window.foodAlways = (n) => /^(холодн\S*\s+)?(вод(а|и|у)|окріп|кип.?яток|лід)(?![а-яіїєґ])/i.test(String(n || '').trim());
 if (typeof window.foodMatch !== 'function') window.foodMatch = (q, n) => { const a = String(q || '').trim().toLowerCase(); const b = String(n || '').trim().toLowerCase(); return !!a && !!b && (a === b || b.includes(a) || a.includes(b)); };
 const uid = () => Math.random().toString(36).slice(2, 10);
 const norm = (s) => String(s || '').trim().toLowerCase();

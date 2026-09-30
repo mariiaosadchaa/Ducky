@@ -97,20 +97,32 @@
   const STOP = new Set(['для', 'без', 'або', 'зі', 'із', 'по', 'на', 'та', 'і', 'з', 'в', 'у']);
   const stems = (s) => clean(s).split(/[\s-]+/).filter((t) => t.length >= 3 && !STOP.has(t)).map((t) => t.slice(0, 5));
   // збіг: «що шукаємо» (інгредієнт, запит) проти назви продукту
-  function foodMatch(query, name) {
+  const MEATS = ['pork', 'beef', 'chicken', 'turkey', 'meat', 'mince'];
+  // вода, окріп, лід — є завжди, купувати не треба
+  const ALWAYS = new RegExp('^((холодн|тепл|гаряч|кип[’\'ʼ]?ячен|питн|фільтрован|очищен)\\S*\\s+)?(вод(а|и|у|і|ою)|окріп|окропу|кип[’\'ʼ]?яток|кип[’\'ʼ]?ятку|лід|льод|лед)(?![а-яіїєґ])', 'i');
+  window.foodAlways = (name) => ALWAYS.test(clean(name));
+  function matchOne(query, name) {
     const q = concepts(query); const p = concepts(name);
     const cq = clean(query); const cn = clean(name);
     if (!cq || !cn) return false;
     if (cq === cn) return true;
     if (q.ids.size) {
-      // усі названі поняття мають бути в продукті; «м'ясо» також збігається з будь-яким конкретним м'ясом
-      return [...q.ids].every((id) => p.ids.has(id) || (id === 'meat' && p.cats.has('meat')));
+      // усі названі поняття мають бути в продукті; «м'ясо» — будь-яке м'ясо; «фарш» можна зробити з будь-якого м'яса
+      return [...q.ids].every((id) => p.ids.has(id)
+        || (id === 'meat' && p.cats.has('meat'))
+        || (id === 'mince' && !p.ids.has('sausage') && MEATS.some((m) => p.ids.has(m))));
     }
     if (q.cats.size) return [...q.cats].some((c) => p.cats.has(c));
     // невідоме слово: збіг за основами слів або підрядок (від 4 літер)
     const a = stems(query); const b = stems(name);
     if (a.length && a.every((x) => b.includes(x))) return true;
     return cq.length >= 4 && (cn.includes(cq) || (cn.length >= 4 && cq.includes(cn)));
+  }
+  // збіг: «що шукаємо» (інгредієнт, запит) проти назви продукту; «А або Б» — досить будь-якого
+  function foodMatch(query, name) {
+    if (window.foodAlways(query)) return true;
+    const alts = String(query == null ? '' : query).split(/\s+(?:або|чи|или)\s+|\s*\/\s*/i).filter(Boolean);
+    return (alts.length > 1 ? alts : [query]).some((a) => matchOne(a, name));
   }
   window.foodMatch = foodMatch;
   window.foodConcepts = concepts;
@@ -441,7 +453,7 @@
         const res = await X.callApi('/api/import-recipe', /^https?:\/\/\S+$/i.test(v) ? { url: v } : { text: v });
         const r = res.recipe;
         const buy = r.ings.filter((i) => !hasIng(i));
-        msg.textContent = 'Готово. Перевірте й збережіть.';
+        msg.textContent = res.source === 'site' ? 'Готово, розібрано без ШІ. Перевірте й збережіть.' : 'Готово (розібрано ШІ). Перевірте й збережіть.';
         const saved = h('span', { class: 'mute' });
         out.replaceChildren(h('div', { class: 'card' },
           h('div', { class: 'tag' }, r.tech || 'Імпорт'), h('h3', {}, r.title),
@@ -457,7 +469,7 @@
       btn.disabled = false;
     } }, 'Розібрати рецепт');
     return h('div', { class: 'card', style: 'margin-bottom:28px' }, h('div', { class: 'tag' }, 'Рецепт із посилання'),
-      h('p', { class: 'mute', style: 'margin:8px 0 12px' }, 'ШІ розкладе сторінку чи текст на інгредієнти, кроки й техніку.'), box, h('div', { style: 'margin-top:12px' }, btn), msg, out);
+      h('p', { class: 'mute', style: 'margin:8px 0 12px' }, 'Спершу розбираємо без ШІ (розмітка сторінки), і лише якщо не вийшло, підключається ШІ.'), box, h('div', { style: 'margin-top:12px' }, btn), msg, out);
   }
 
   // ---------- що приготувати сьогодні ----------
