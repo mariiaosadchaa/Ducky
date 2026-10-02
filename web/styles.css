@@ -412,3 +412,22 @@ svg.i { width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:1.
 .st { display:inline-flex; align-items:center; gap:5px; font-size:12px; padding:2px 9px; border-radius:99px; white-space:nowrap; }
 .st svg { width:13px; height:13px; }
 .st.ok { background:rgba(47,125,91,.14); color:#2f7d5b; } .st.bad { background:rgba(180,68,31,.13); color:#b4441f; } .st.no { background:rgba(120,130,150,.12); color:var(--mute); }
+
+/* v7: режим «Дім» */
+.h-prog { height:6px; background:var(--line); overflow:hidden; }
+.h-prog span { display:block; height:100%; background:var(--gold); transition:width .5s var(--ease); }
+.h-row .h-time { white-space:nowrap; }
+.h-list { list-style:none; margin:8px 0 0; padding:0; display:grid; gap:6px; font-size:15px; }
+.h-list li { display:flex; gap:10px; }
+.h-list li.done { text-decoration:line-through; opacity:.5; }
+.h-t { color:var(--gold); font-variant-numeric:tabular-nums; min-width:44px; }
+.chore-row { display:grid; grid-template-columns:1fr auto auto; gap:10px; align-items:center; padding:10px 0; border-top:1px solid var(--line); }
+.chore-main .mute { font-size:13px; }
+.time-row { display:grid; grid-template-columns:130px 120px 90px auto; gap:12px; align-items:center; padding:8px 0; border-top:1px solid var(--line); }
+.tag.warn, .note.warn { color:var(--warn, #c0392b); }
+#modeBtn { margin-right:6px; }
+@media (max-width:600px) {
+  .chore-row { grid-template-columns:1fr auto; } .chore-row .link { grid-column:1 / -1; justify-self:start; }
+  .time-row { grid-template-columns:1fr 100px 80px; } .time-row .mute { display:none; }
+  .h-row .h-time { display:none; }
+}

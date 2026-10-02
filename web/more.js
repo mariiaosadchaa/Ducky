@@ -44,7 +44,7 @@
     ['cucumber', 'огірк|огурц', 'veg'],
     ['cabbage', 'капуст', 'veg'],
     ['beet', 'буряк|свекл|бурак', 'veg'],
-    ['bellpepper', 'перець\\s+(солод|болгар)|перец\\s+(слад|болгар)|паприк', 'veg'],
+    ['bellpepper', 'перець\\s+(солод|болгар)|перец\\s+(слад|болгар)|(солод|болгар|слад)\\S*\\s+пере[цч]|паприк', 'veg'],
     ['pepper', 'перець|перец', 'spice', ['bellpepper']],
     ['mushroom', 'гриб|шампіньйон|шампиньон|печериц|лисичк', 'veg'],
     ['zucchini', 'кабачк|цукіні|цуккини', 'veg'],
@@ -99,7 +99,7 @@
   // збіг: «що шукаємо» (інгредієнт, запит) проти назви продукту
   const MEATS = ['pork', 'beef', 'chicken', 'turkey', 'meat', 'mince'];
   // вода, окріп, лід — є завжди, купувати не треба
-  const ALWAYS = new RegExp('^((холодн|тепл|гаряч|кип[’\'ʼ]?ячен|питн|фільтрован|очищен)\\S*\\s+)?(вод(а|и|у|і|ою)|окріп|окропу|кип[’\'ʼ]?яток|кип[’\'ʼ]?ятку|лід|льод|лед)(?![а-яіїєґ])', 'i');
+  const ALWAYS = new RegExp('^((холодн|тепл|гаряч|крижан|льодян|ледян|кип[’\'ʼ]?ячен|питн|фільтрован|очищен|чист)\\S*\\s+)?(вод(а|и|у|і|ою)|окріп|окропу|кип[’\'ʼ]?яток|кип[’\'ʼ]?ятку|лід|льод|лед)(?![а-яіїєґ])', 'i');
   window.foodAlways = (name) => ALWAYS.test(clean(name));
   function matchOne(query, name) {
     const q = concepts(query); const p = concepts(name);
@@ -891,6 +891,411 @@
     const gi = out.findIndex((el) => el && el.classList && el.classList.contains('grid')); out.splice(gi < 0 ? out.length : gi, 0, listCard());
     return out;
   };
+
+
+  // ---------- Дім: планувальник (чиста логіка, без DOM) ----------
+  (function (root) {
+    const pad = (n) => String(n).padStart(2, '0');
+    const localISO = (d) => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+    const addDays = (iso, n) => { const d = new Date(iso + 'T12:00:00'); d.setDate(d.getDate() + n); return localISO(d); };
+    const wdOf = (iso) => (new Date(iso + 'T12:00:00').getDay() + 6) % 7;      // Пн = 0
+    const diff = (a, b) => Math.round((new Date(a + 'T12:00:00') - new Date(b + 'T12:00:00')) / 86400000);
+    const hm = (t) => { const m = /^(\d{1,2}):(\d{2})/.exec(String(t || '')); return m ? Number(m[1]) * 60 + Number(m[2]) : 18 * 60; };
+    const fmtHM = (m) => pad(Math.floor(m / 60) % 24) + ':' + pad(m % 60);
+    // порядок у кімнаті: спершу пил, потім пилосос, у кінці вологе прибирання підлоги
+    const stepOf = (title) => {
+      const t = String(title || '').toLowerCase();
+      if (/(?<![а-яіїєґ])(пил(?!ос)|протер|поверхн|полиц)/.test(t)) return 1;
+      if (/пилосос|підмест|підмет/.test(t)) return 3;
+      if (/підлог|швабр|помит.*пол|мокре/.test(t)) return 4;
+      return 2;
+    };
+    const DEF_HOURS = [0, 1, 2, 3, 4].map(() => ({ start: '18:30', min: 45 })).concat([{ start: '10:00', min: 150 }, { start: '11:00', min: 120 }]);
+    const hoursOf = (home) => DEF_HOURS.map((d, i) => { const h = (home.hours || [])[i] || {}; return { start: h.start || d.start, min: h.min == null || h.min === '' ? d.min : Math.max(0, Number(h.min) || 0) }; });
+
+    // Склад «що й коли»: кожна справа має «строк» і вікно, в якому її можна переносити
+    function candidates(home, today, horizonEnd) {
+      const out = [];
+      (home.chores || []).forEach((c, idx) => {
+        const every = Math.max(1, Number(c.every) || 7);
+        const last = c.last || null;
+        let next = last ? addDays(last, every) : addDays(today, c.must ? 0 : idx % Math.min(every, 7));
+        if (c.wd != null && c.wd !== '' && !isNaN(Number(c.wd))) {
+          const base = next < today ? today : next; const w = Number(c.wd);
+          next = addDays(base, (w - wdOf(base) + 7) % 7);
+        }
+        const flex = c.wd != null && c.wd !== '' ? 0 : every >= 14 ? 3 : every >= 7 ? 2 : every >= 3 ? 1 : 0;
+        const slack = c.must || (c.wd != null && c.wd !== '') ? 0 : every >= 7 ? 2 : every >= 3 ? 1 : 0;
+        for (let k = 0; k < 40; k++) {
+          const due = k === 0 ? next : addDays(next < today ? today : next, k * every);
+          if (due > (k === 0 ? addDays(horizonEnd, flex) : horizonEnd)) break;
+          const overdue = due < today;
+          const fl = k === 0 ? flex : 0;
+          let lo = overdue ? today : addDays(due, -fl); if (lo < today) lo = today;
+          let hi = overdue ? (c.must ? today : addDays(today, Math.min(2, slack + 1))) : addDays(due, slack);
+          if (c.snooze && k === 0 && lo < c.snooze) { lo = c.snooze; if (hi < lo) hi = lo; }
+          if (hi > horizonEnd) hi = horizonEnd;
+          if (lo > hi) continue;
+          out.push({ key: 'c:' + c.id + (k ? '#' + k : ''), type: 'chore', id: c.id, title: c.title, room: c.room, minutes: Math.max(1, Number(c.minutes) || 15), must: !!c.must, due, overdue, lo, hi, forced: !!c.must || overdue && !!c.must, step: stepOf(c.title), prio: 'norm' });
+        }
+      });
+      (home.tasks || []).forEach((t) => {
+        if (t.done) return;
+        const due = t.due || null; const overdue = !!due && due < today;
+        let lo = today; if (t.snooze && t.snooze > lo) lo = t.snooze;
+        let hi = due ? (due < today ? today : due) : (t.prio === 'high' ? addDays(today, 1) : horizonEnd);
+        if (hi > horizonEnd) hi = horizonEnd;
+        if (hi < lo) hi = lo;
+        if (lo > horizonEnd) return;
+        out.push({ key: 't:' + t.id, type: 'task', id: t.id, title: t.title, room: t.room || null, minutes: Math.max(1, Number(t.minutes) || 20), must: false, due, overdue, lo, hi, forced: overdue || (t.prio === 'high' && !!due && due <= horizonEnd && hi === lo), step: 0, prio: t.prio || 'norm' });
+      });
+      return out;
+    }
+
+    function planWeek(home, today, opts) {
+      const n = (opts && opts.days) || 7;
+      const horizonEnd = addDays(today, n - 1);
+      const hours = hoursOf(home);
+      const days = Array.from({ length: n }, (_, i) => { const date = addDays(today, i); const hh = hours[wdOf(date)]; return { date, wd: wdOf(date), cap: hh.min, start: hh.start, items: [], load: 0 }; });
+      const byDate = Object.fromEntries(days.map((d) => [d.date, d]));
+      const rank = (c) => (c.forced ? 0 : c.prio === 'high' ? 1 : c.type === 'chore' || c.due ? 2 : 3);
+      const cand = candidates(home, today, horizonEnd).sort((a, b) => rank(a) - rank(b) || (a.hi < b.hi ? -1 : a.hi > b.hi ? 1 : 0) || b.minutes - a.minutes);
+      const unplaced = [];
+      for (const c of cand) {
+        let best = null;
+        for (let d = c.lo; d <= c.hi; d = addDays(d, 1)) {
+          const day = byDate[d]; if (!day) continue;
+          const after = day.load + c.minutes;
+          const over = after > day.cap;
+          if (over && !c.forced) continue;
+          let score = after / Math.max(day.cap, 30);
+          if (day.cap === 0) score += 5;
+          if (over) score += 3;                                            // обов'язкове лізе в день лише якщо інакше нікуди
+          if (c.type === 'chore') score += Math.abs(diff(d, c.due)) * 0.12;
+          else if (!c.due) score += diff(d, today) * 0.03;
+          if (c.room && day.items.some((x) => x.room === c.room)) score -= 0.35;   // прибирання кімнати разом
+          if (!best || score < best.score) best = { day, score };
+        }
+        if (best) { best.day.items.push({ ...c, date: best.day.date }); best.day.load += c.minutes; } else unplaced.push(c);
+      }
+      // порядок у дні: окремі задачі, далі кімнати за порядком у списку, у кімнаті пил → підлога
+      const roomIdx = (id) => { const i = (home.rooms || []).findIndex((r) => r.id === id); return i < 0 ? 99 : i; };
+      for (const day of days) {
+        day.items.sort((a, b) => {
+          const ta = a.type === 'task' && !a.room ? 0 : 1; const tb = b.type === 'task' && !b.room ? 0 : 1;
+          if (ta !== tb) return ta - tb;
+          if (ta === 0) return (a.prio === 'high' ? 0 : 1) - (b.prio === 'high' ? 0 : 1) || a.minutes - b.minutes;
+          return roomIdx(a.room) - roomIdx(b.room) || a.step - b.step || a.minutes - b.minutes;
+        });
+        let t = hm(day.start);
+        for (const it of day.items) { it.startMin = t; it.endMin = t + it.minutes; t += it.minutes; }
+      }
+      return { days, unplaced };
+    }
+    root.DuckyPlan = { planWeek, localISO, addDays, wdOf, diff, hoursOf, fmtHM, DEF_HOURS, stepOf };
+  })(typeof window !== 'undefined' ? window : globalThis);
+
+  // ---------- ДІМ: прибирання, задачі й розклад на день ----------
+  (function homeMode() {
+    const P = window.DuckyPlan;
+    const MODE_KEY = 'ducky.mode';
+    const HOME_TABS = [['h_today', 'Сьогодні'], ['h_week', 'Розклад'], ['h_clean', 'Прибирання'], ['h_tasks', 'Задачі'], ['h_time', 'Мій час']];
+    const KITCHEN_TABS = TABS.slice();
+    let kTab = 'pantry'; let hTab = 'h_today';
+    const isHome = () => store.get(MODE_KEY) === 'home';
+    const todayD = () => P.localISO(new Date());
+    const HM = () => {
+      if (!state.home || typeof state.home !== 'object') state.home = {};
+      const x = state.home;
+      for (const k of ['rooms', 'chores', 'tasks', 'hours']) if (!Array.isArray(x[k])) x[k] = [];
+      if (!x.log || typeof x.log !== 'object') x.log = {};
+      return x;
+    };
+    const dayName = (iso, long) => new Date(iso + 'T12:00:00').toLocaleDateString('uk-UA', long ? { weekday: 'long', day: 'numeric', month: 'long' } : { weekday: 'short', day: 'numeric', month: 'short' });
+    const mins = (m) => { m = Math.round(m); return m >= 60 ? Math.floor(m / 60) + ' год' + (m % 60 ? ' ' + (m % 60) + ' хв' : '') : m + ' хв'; };
+    const WD = ['Понеділок', 'Вівторок', 'Середа', 'Четвер', 'Пʼятниця', 'Субота', 'Неділя'];
+    const EVERY = [[1, 'щодня'], [2, 'раз на 2 дні'], [3, 'раз на 3 дні'], [7, 'щотижня'], [14, 'раз на 2 тижні'], [30, 'щомісяця'], [90, 'раз на 3 місяці']];
+    const everyLabel = (n) => (EVERY.find((e) => e[0] === Number(n)) || [0, 'раз на ' + n + ' дн.'])[1];
+    const roomName = (id) => { const r = HM().rooms.find((x) => x.id === id); return r ? r.name : ''; };
+    const cases = (n, a) => { const m10 = n % 10; const m100 = n % 100; return n + ' ' + (m10 === 1 && m100 !== 11 ? a[0] : m10 >= 2 && m10 <= 4 && (m100 < 10 || m100 >= 20) ? a[1] : a[2]); };
+    const PRIO = [['high', 'Висока'], ['norm', 'Звичайна'], ['low', 'Низька']];
+
+    // ----- знімок плану на сьогодні: щоб список не стрибав, коли відмічаєш справи -----
+    const sigOf = (hm) => JSON.stringify([hm.rooms.map((r) => [r.id, r.name]), hm.chores.map((c) => [c.id, c.title, c.room, c.every, c.minutes, c.must, c.wd, c.snooze]),
+      hm.tasks.map((t) => [t.id, t.title, t.due, t.minutes, t.prio, t.room, t.snooze]), hm.hours]);
+    const slim = (i) => ({ key: i.key, type: i.type, id: i.id, title: i.title, room: i.room, minutes: i.minutes, must: i.must, overdue: i.overdue, due: i.due, startMin: i.startMin, endMin: i.endMin });
+    function todaySnap() {
+      const hm = HM(); const today = todayD(); const sig = sigOf(hm);
+      if (!hm.snap || hm.snap.date !== today || hm.snap.sig !== sig) {
+        const same = hm.snap && hm.snap.date === today;
+        const doneKeys = same ? (hm.log[today] || []) : [];
+        const keep = same ? hm.snap.items.filter((i) => doneKeys.includes(i.key)) : [];
+        const plan = P.planWeek(hm, today).days[0];
+        const fresh = plan.items.filter((i) => !keep.some((k) => k.key === i.key)).map(slim);
+        const items = keep.concat(fresh);
+        let t = (function (s) { const m = /^(\d+):(\d+)/.exec(s); return m ? Number(m[1]) * 60 + Number(m[2]) : 18 * 60 + 30; })(plan.start);
+        for (const it of items) { it.startMin = t; it.endMin = t + it.minutes; t += it.minutes; }
+        hm.snap = { date: today, sig, items, cap: plan.cap };
+        for (const d of Object.keys(hm.log)) if (d < P.addDays(today, -20)) delete hm.log[d];
+        save();
+      }
+      return hm.snap;
+    }
+    function tick(item, on) {
+      const hm = HM(); const today = todayD();
+      const log = hm.log[today] || (hm.log[today] = []);
+      if (item.type === 'chore') {
+        const c = hm.chores.find((x) => x.id === item.id);
+        if (c) { if (on) { c.prevLast = c.last || null; c.last = today; } else { c.last = c.prevLast || null; } }
+      } else {
+        const t = hm.tasks.find((x) => x.id === item.id); if (t) t.done = on;
+      }
+      const i = log.indexOf(item.key);
+      if (on && i < 0) log.push(item.key); if (!on && i >= 0) log.splice(i, 1);
+      save(); render();
+    }
+    function postpone(item) {
+      const hm = HM(); const tomorrow = P.addDays(todayD(), 1);
+      const x = item.type === 'chore' ? hm.chores.find((c) => c.id === item.id) : hm.tasks.find((t) => t.id === item.id);
+      if (x) x.snooze = tomorrow;
+      save(); render(); X.toast('Перенесено на завтра: ' + item.title);
+    }
+
+    // ----- Сьогодні -----
+    function itemRow(i, dn, opts) {
+      const rn = i.room ? roomName(i.room) : '';
+      return h('label', { class: 'shop-row h-row' + (dn ? ' done' : '') },
+        h('input', { type: 'checkbox', checked: dn ? true : null, disabled: opts && opts.readonly ? true : null, onchange: (e) => tick(i, e.target.checked) }),
+        h('span', { class: 'shop-n' }, i.title,
+          h('span', { class: 'mute' }, [rn && ' · ' + rn, i.must && ' · обовʼязково', i.overdue && ' · прострочено'].filter(Boolean).join(''))),
+        h('span', { class: 'tag h-time' }, P.fmtHM(i.startMin) + '–' + P.fmtHM(i.endMin)),
+        h('span', { class: 'mute shop-p' }, mins(i.minutes)),
+        opts && opts.readonly ? null : h('button', { class: 'link shop-x', type: 'button', title: 'Перенести на завтра', 'aria-label': 'Перенести на завтра: ' + i.title,
+          onclick: (e) => { e.preventDefault(); e.stopPropagation(); postpone(i); } }, 'завтра'));
+    }
+    function viewToday() {
+      const hm = HM(); const today = todayD(); const snap = todaySnap();
+      const done = hm.log[today] || [];
+      const open = snap.items.filter((i) => !done.includes(i.key)); const dn = snap.items.filter((i) => done.includes(i.key));
+      const total = snap.items.reduce((s, i) => s + i.minutes, 0); const doneMin = dn.reduce((s, i) => s + i.minutes, 0);
+      const pct = total ? Math.round((doneMin / total) * 100) : 0;
+      const empty = !hm.rooms.length && !hm.chores.length && !hm.tasks.length;
+      return [...header('Дім · ' + dayName(today, true), 'Справи на', 'сьогодні'),
+        statsRow([['Залишилось справ', open.length], ['Зроблено', dn.length], ['Часу залишилось, хв', Math.max(0, total - doneMin)]]),
+        snap.items.length
+          ? h('div', { class: 'card' },
+            h('div', { class: 'h-prog', role: 'progressbar', 'aria-valuenow': pct, 'aria-valuemin': 0, 'aria-valuemax': 100 }, h('span', { style: 'width:' + pct + '%' })),
+            h('p', { class: 'mute', style: 'margin:8px 0 14px' }, snap.items.length === dn.length ? 'Усе зроблено. Можна відпочивати.' : 'План на сьогодні: ' + mins(total) + (snap.cap ? ', у твоєму графіку ' + mins(snap.cap) : '') + '.'),
+            h('div', {}, open.map((i) => itemRow(i, false)), dn.map((i) => itemRow(i, true))))
+          : h('p', { class: 'empty' }, empty ? 'Поки порожньо. Додай кімнати й справи у розділі «Прибирання» та задачі у «Задачі». Розклад складеться сам.' : 'На сьогодні нічого не заплановано. Гарного відпочинку.'),
+        h('div', { class: 'toolbar', style: 'margin-top:16px' },
+          h('button', { class: 'ghost', type: 'button', onclick: () => { hm.snap = null; save(); render(); X.toast('Розклад на сьогодні перераховано'); } }, 'Перепланувати')),
+        h('p', { class: 'note' }, 'Кнопка «завтра» переносить справу на наступний день. Обовʼязкові справи не переносяться далі за свій день.')];
+    }
+
+    // ----- Розклад на тиждень -----
+    function viewWeek() {
+      const hm = HM(); const today = todayD(); const snap = todaySnap();
+      const plan = P.planWeek(hm, today);
+      const days = plan.days.map((d, i) => (i === 0 ? { ...d, items: snap.items, load: snap.items.reduce((s, x) => s + x.minutes, 0) } : d));
+      const done = hm.log[today] || [];
+      return [...header('Дім · 7 днів', 'Розклад на', 'тиждень'),
+        h('div', { class: 'cards' }, days.map((d, i) => h('div', { class: 'card' + (i === 0 ? ' gold' : '') },
+          h('div', { class: 'tag' }, i === 0 ? 'Сьогодні' : dayName(d.date)),
+          h('div', { class: 'mute' }, d.items.length ? cases(d.items.length, ['справа', 'справи', 'справ']) + ' · ' + mins(d.load) + (d.cap ? ' з ' + mins(d.cap) : ' · вихідний за графіком') : (d.cap ? 'Вільний день' : 'Вихідний за графіком')),
+          d.items.length ? h('ul', { class: 'h-list' }, d.items.map((x) => h('li', { class: i === 0 && done.includes(x.key) ? 'done' : '' },
+            h('span', { class: 'h-t' }, P.fmtHM(x.startMin)), h('span', {}, x.title, x.room ? h('span', { class: 'mute' }, ' · ' + roomName(x.room)) : null, x.must ? h('span', { class: 'gold-t' }, ' ★') : null)))) : null))),
+        plan.unplaced.length ? h('p', { class: 'note warn' }, 'Не вмістилось у графік: ' + plan.unplaced.map((u) => u.title).join(', ') + '. Збільш час у «Мій час» або зніми частину справ.') : null,
+        h('p', { class: 'note' }, '★ означає обовʼязкову справу. Розклад перераховується сам, коли ти відмічаєш зроблене або змінюєш справи.')];
+    }
+
+    // ----- Прибирання -----
+    function choreModal(chore, roomId) {
+      const hm = HM(); let closeFn = null;
+      const c = chore || { id: uid(), room: roomId || (hm.rooms[0] && hm.rooms[0].id), title: '', every: 7, minutes: 15, must: false, wd: null, last: null };
+      const title = h('input', { value: c.title, placeholder: 'Наприклад: Помити підлогу', 'aria-label': 'Назва' });
+      const room = h('select', { 'aria-label': 'Кімната' }, hm.rooms.map((r) => h('option', { value: r.id, selected: r.id === c.room ? true : null }, r.name)));
+      const known = EVERY.some((e) => e[0] === Number(c.every));
+      const every = h('select', { 'aria-label': 'Як часто' }, EVERY.map(([n, l]) => h('option', { value: n, selected: Number(c.every) === n ? true : null }, l)), h('option', { value: 0, selected: !known ? true : null }, 'Свій інтервал…'));
+      const custom = h('input', { type: 'number', min: 1, max: 365, value: known ? '' : c.every, placeholder: 'Раз на скільки днів', 'aria-label': 'Свій інтервал, днів' });
+      const minutes = h('input', { type: 'number', min: 1, max: 600, value: c.minutes, 'aria-label': 'Скільки хвилин' });
+      const wd = h('select', { 'aria-label': 'День тижня' }, h('option', { value: '' }, 'Будь-який день'), WD.map((n, i) => h('option', { value: i, selected: c.wd != null && c.wd !== '' && Number(c.wd) === i ? true : null }, n)));
+      const must = h('input', { type: 'checkbox', checked: c.must ? true : null });
+      const last = h('input', { type: 'date', value: c.last || '', 'aria-label': 'Востаннє робила' });
+      const msg = h('p', { class: 'note', role: 'status', style: 'margin:8px 0 0' });
+      let armed = false;
+      const body = h('div', { style: 'display:grid;gap:12px' },
+        h('label', {}, 'Що зробити', title), h('label', {}, 'Кімната', room),
+        h('label', {}, 'Як часто', every), h('label', {}, 'Свій інтервал, днів (якщо обрано вище)', custom),
+        h('label', {}, 'Скільки часу займає, хв', minutes),
+        h('label', {}, 'Тільки в певний день тижня', wd),
+        h('label', { style: 'display:flex;gap:10px;align-items:center;flex-direction:row;text-transform:none;letter-spacing:0;font-size:15px' }, must, 'Обовʼязково (не відкладати, ставити в розклад завжди)'),
+        h('label', {}, 'Востаннє робила (необовʼязково)', last),
+        h('div', { class: 'toolbar' },
+          h('button', { class: 'primary', type: 'button', onclick: () => {
+            const t = title.value.trim(); if (!t) { msg.textContent = 'Напиши, що саме робити.'; return; }
+            if (!room.value) { msg.textContent = 'Спершу додай кімнату.'; return; }
+            const ev = Number(every.value) || Number(custom.value) || 7;
+            Object.assign(c, { title: t, room: room.value, every: Math.max(1, Math.round(ev)), minutes: Math.max(1, Math.round(Number(minutes.value) || 15)), wd: wd.value === '' ? null : Number(wd.value), must: must.checked, last: last.value || null });
+            if (!chore) hm.chores.push(c);
+            save(); closeFn(); render();
+          } }, 'Зберегти'),
+          chore ? h('button', { class: 'link', type: 'button', onclick: (e) => {
+            if (!armed) { armed = true; e.target.textContent = 'Натисни ще раз, щоб видалити'; return; }
+            hm.chores = hm.chores.filter((x) => x.id !== c.id); save(); closeFn(); render();
+          } }, 'Видалити') : null), msg);
+      closeFn = X.openModal(chore ? 'Змінити справу' : 'Нова справа', body);
+    }
+    function roomModal(room) {
+      const hm = HM(); let closeFn = null; let armed = false;
+      const name = h('input', { value: room.name, 'aria-label': 'Назва кімнати' });
+      closeFn = X.openModal('Кімната', h('div', { style: 'display:grid;gap:12px' }, h('label', {}, 'Назва', name),
+        h('div', { class: 'toolbar' },
+          h('button', { class: 'primary', type: 'button', onclick: () => { if (name.value.trim()) { room.name = name.value.trim(); save(); closeFn(); render(); } } }, 'Зберегти'),
+          h('button', { class: 'link', type: 'button', onclick: (e) => {
+            if (!armed) { armed = true; e.target.textContent = 'Видалити разом зі справами? Натисни ще раз'; return; }
+            hm.rooms = hm.rooms.filter((r) => r.id !== room.id); hm.chores = hm.chores.filter((c) => c.room !== room.id);
+            hm.tasks.forEach((t) => { if (t.room === room.id) t.room = null; }); save(); closeFn(); render();
+          } }, 'Видалити кімнату'))));
+    }
+    function viewClean() {
+      const hm = HM(); const today = todayD();
+      const nameIn = h('input', { placeholder: 'Нова кімната: Кухня, Ванна…', 'aria-label': 'Нова кімната', list: 'dl-rooms' });
+      const addRoom = () => { const v = nameIn.value.trim(); if (!v) return; if (!hm.rooms.some((r) => norm(r.name) === norm(v))) hm.rooms.push({ id: uid(), name: v }); save(); render(); };
+      nameIn.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addRoom(); } });
+      const preset = () => { for (const n of ['Кухня', 'Ванна', 'Спальня', 'Вітальня', 'Передпокій']) if (!hm.rooms.some((r) => norm(r.name) === norm(n))) hm.rooms.push({ id: uid(), name: n }); save(); render(); };
+      const cards = hm.rooms.map((r) => {
+        const list = hm.chores.filter((c) => c.room === r.id);
+        return h('div', { class: 'card' },
+          h('div', { class: 'tag' }, 'Кімната'), h('h3', {}, r.name),
+          list.length ? list.map((c) => {
+            const nxt = c.last ? P.addDays(c.last, c.every) : null;
+            const late = nxt && nxt < today;
+            return h('div', { class: 'chore-row' },
+              h('div', { class: 'chore-main' }, h('div', {}, c.title, c.must ? h('span', { class: 'gold-t' }, ' ★') : null),
+                h('div', { class: 'mute' }, [everyLabel(c.every), mins(c.minutes), c.wd != null && c.wd !== '' ? 'у ' + WD[c.wd].toLowerCase() : null,
+                  c.last ? 'востаннє ' + dayName(c.last) : 'ще не робила', late ? 'прострочено' : null].filter(Boolean).join(' · '))),
+              h('button', { class: 'ghost', type: 'button', onclick: () => { c.prevLast = c.last || null; c.last = today; save(); render(); X.toast('Відмічено: ' + c.title); } }, 'Зроблено'),
+              h('button', { class: 'link', type: 'button', onclick: () => choreModal(c) }, 'Змінити'));
+          }) : h('p', { class: 'mute', style: 'margin:4px 0' }, 'Ще немає справ.'),
+          h('div', { class: 'toolbar', style: 'margin-top:10px' },
+            h('button', { class: 'ghost', type: 'button', onclick: () => choreModal(null, r.id) }, 'Додати справу'),
+            h('button', { class: 'link', type: 'button', onclick: () => roomModal(r) }, 'Кімната')));
+      });
+      return [...header('Дім · кімнати', 'Прибирання', 'по кімнатах'),
+        h('div', { class: 'card', style: 'margin-bottom:28px' }, h('div', { class: 'tag' }, 'Додати кімнату'),
+          h('datalist', { id: 'dl-rooms' }, ['Кухня', 'Ванна', 'Туалет', 'Спальня', 'Вітальня', 'Дитяча', 'Передпокій', 'Балкон', 'Кабінет'].map((n) => h('option', { value: n }))),
+          h('div', { class: 'toolbar', style: 'margin-top:10px' }, nameIn, h('button', { class: 'primary', type: 'button', onclick: addRoom }, 'Додати'),
+            hm.rooms.length ? null : h('button', { class: 'ghost', type: 'button', onclick: preset }, 'Додати типові кімнати'))),
+        hm.rooms.length ? h('div', { class: 'cards' }, cards) : h('p', { class: 'empty' }, 'Додай кімнати, а в кожній справи: що, як часто, скільки часу. Познач «обовʼязково» те, що не можна пропускати.'),
+        h('p', { class: 'note' }, 'Розклад сам розкладе справи по днях: обовʼязкові у свій день, прибирання однієї кімнати разом, спершу пил, потім пилосос і підлога.')];
+    }
+
+    // ----- Задачі -----
+    function taskModal(task) {
+      const hm = HM(); let closeFn = null; let armed = false;
+      const t = task || { id: uid(), title: '', due: '', minutes: 30, prio: 'norm', room: '', done: false };
+      const title = h('input', { value: t.title, placeholder: 'Наприклад: Записатися до лікаря', 'aria-label': 'Задача' });
+      const due = h('input', { type: 'date', value: t.due || '', 'aria-label': 'Зробити до' });
+      const minutes = h('input', { type: 'number', min: 1, max: 600, value: t.minutes, 'aria-label': 'Хвилин' });
+      const prio = h('select', { 'aria-label': 'Важливість' }, PRIO.map(([k, l]) => h('option', { value: k, selected: t.prio === k ? true : null }, l)));
+      const room = h('select', { 'aria-label': 'Кімната' }, h('option', { value: '' }, 'Без кімнати'), hm.rooms.map((r) => h('option', { value: r.id, selected: t.room === r.id ? true : null }, r.name)));
+      const msg = h('p', { class: 'note', role: 'status', style: 'margin:8px 0 0' });
+      closeFn = X.openModal(task ? 'Змінити задачу' : 'Нова задача', h('div', { style: 'display:grid;gap:12px' },
+        h('label', {}, 'Що зробити', title), h('label', {}, 'Зробити до (необовʼязково)', due), h('label', {}, 'Скільки часу, хв', minutes),
+        h('label', {}, 'Важливість', prio), h('label', {}, 'Кімната (необовʼязково)', room),
+        h('div', { class: 'toolbar' },
+          h('button', { class: 'primary', type: 'button', onclick: () => {
+            if (!title.value.trim()) { msg.textContent = 'Напиши, що зробити.'; return; }
+            Object.assign(t, { title: title.value.trim(), due: due.value || null, minutes: Math.max(1, Math.round(Number(minutes.value) || 30)), prio: prio.value, room: room.value || null });
+            if (!task) hm.tasks.push(t); save(); closeFn(); render();
+          } }, 'Зберегти'),
+          task ? h('button', { class: 'link', type: 'button', onclick: (e) => {
+            if (!armed) { armed = true; e.target.textContent = 'Натисни ще раз, щоб видалити'; return; }
+            hm.tasks = hm.tasks.filter((x) => x.id !== t.id); save(); closeFn(); render();
+          } }, 'Видалити') : null), msg));
+    }
+    function viewTasks() {
+      const hm = HM(); const today = todayD();
+      const quick = h('input', { placeholder: 'Нова задача, потім Enter', 'aria-label': 'Нова задача' });
+      const addQuick = () => { const v = quick.value.trim(); if (!v) return; hm.tasks.push({ id: uid(), title: v, due: null, minutes: 30, prio: 'norm', room: null, done: false }); save(); render(); };
+      quick.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addQuick(); } });
+      const po = { high: 0, norm: 1, low: 2 };
+      const open = hm.tasks.filter((t) => !t.done).sort((a, b) => (a.due || '9') < (b.due || '9') ? -1 : (a.due || '9') > (b.due || '9') ? 1 : po[a.prio || 'norm'] - po[b.prio || 'norm']);
+      const done = hm.tasks.filter((t) => t.done);
+      const row = (t) => h('label', { class: 'shop-row h-row' + (t.done ? ' done' : '') },
+        h('input', { type: 'checkbox', checked: t.done ? true : null, onchange: (e) => { t.done = e.target.checked; save(); render(); } }),
+        h('span', { class: 'shop-n' }, t.title, h('span', { class: 'mute' }, [t.room && ' · ' + roomName(t.room), t.prio === 'high' && ' · важливо'].filter(Boolean).join(''))),
+        h('span', { class: 'tag' + (t.due && t.due < today && !t.done ? ' warn' : '') }, t.due ? 'до ' + dayName(t.due) : 'без дати'),
+        h('span', { class: 'mute shop-p' }, mins(t.minutes)),
+        h('button', { class: 'link shop-x', type: 'button', onclick: (e) => { e.preventDefault(); e.stopPropagation(); taskModal(t); } }, 'Змінити'));
+      return [...header('Дім · звичайні справи', 'Мої', 'задачі'),
+        h('div', { class: 'card', style: 'margin-bottom:28px' }, h('div', { class: 'toolbar' }, quick, h('button', { class: 'primary', type: 'button', onclick: addQuick }, 'Додати'),
+          h('button', { class: 'ghost', type: 'button', onclick: () => taskModal(null) }, 'З деталями'))),
+        open.length ? h('div', { class: 'card' }, open.map(row)) : h('p', { class: 'empty' }, 'Задач немає. Додай першу: дедлайн і тривалість необовʼязкові, розклад сам знайде час.'),
+        done.length ? h('details', { class: 'card', style: 'margin-top:20px' }, h('summary', {}, 'Виконані (' + done.length + ')'), done.map(row),
+          h('button', { class: 'link', type: 'button', onclick: () => { hm.tasks = hm.tasks.filter((t) => !t.done); save(); render(); } }, 'Очистити виконані')) : null,
+        h('p', { class: 'note' }, 'Задачі з дедлайном потрапляють у розклад до цієї дати, а прострочені одразу на сьогодні.')];
+    }
+
+    // ----- Мій час -----
+    function viewTime() {
+      const hm = HM(); const hours = P.hoursOf(hm);
+      const rows = hours.map((hh, i) => {
+        const st = h('input', { type: 'time', value: hh.start, 'aria-label': 'Початок, ' + WD[i] });
+        const mn = h('input', { type: 'number', min: 0, max: 600, step: 5, value: hh.min, 'aria-label': 'Хвилин, ' + WD[i] });
+        const upd = () => { hm.hours[i] = { start: st.value || hh.start, min: Math.max(0, Number(mn.value) || 0) }; save(); note.textContent = 'Збережено'; };
+        st.addEventListener('change', upd); mn.addEventListener('change', upd);
+        return h('div', { class: 'time-row' }, h('span', {}, WD[i]), st, mn, h('span', { class: 'mute' }, 'хв'));
+      });
+      const note = h('p', { class: 'note', role: 'status' }, 'Зміни зберігаються одразу.');
+      return [...header('Дім · графік', 'Скільки часу', 'маю'),
+        h('div', { class: 'card' }, h('p', { class: 'mute', style: 'margin:0 0 12px' }, 'Для кожного дня: з якої години починаєш і скільки хвилин готова приділити домашнім справам. 0 хв = вихідний.'), rows,
+          h('button', { class: 'link', type: 'button', onclick: () => { hm.hours = []; save(); render(); } }, 'Повернути стандартний графік')), note];
+    }
+
+    const clean = (fn) => () => fn().filter((x) => x != null && x !== false);
+    Object.assign(VIEWS, { h_today: clean(viewToday), h_week: clean(viewWeek), h_clean: clean(viewClean), h_tasks: clean(viewTasks), h_time: clean(viewTime) });
+
+    // ----- перемикач режиму й навігація -----
+    const modeBtn = h('button', { id: 'modeBtn', class: 'ghost', type: 'button' });
+    const right = document.querySelector('header .right');
+    if (right) right.insertBefore(modeBtn, document.getElementById('themeBtn'));
+    function toggleMode() {
+      if (isHome()) { hTab = state.tab; store.set(MODE_KEY, 'kitchen'); state.tab = kTab || 'pantry'; }
+      else { kTab = state.tab; store.set(MODE_KEY, 'home'); state.tab = hTab || 'h_today'; }
+      saveLocal(); render(); window.scrollTo(0, 0);
+    }
+    modeBtn.addEventListener('click', toggleMode);
+    const HI = {
+      h_today: () => S('svg', { viewBox: '0 0 24 24', class: 'ni' }, S('circle', { cx: 12, cy: 12, r: 4 }), S('path', { d: 'M12 3v2 M12 19v2 M3 12h2 M19 12h2 M5.6 5.6 7 7 M17 17l1.4 1.4 M5.6 18.4 7 17 M17 7l1.4-1.4' })),
+      h_week: () => ICON.menu(),
+      h_clean: () => S('svg', { viewBox: '0 0 24 24', class: 'ni' }, S('path', { d: 'M5 20h14 M8 20l1-9h6l1 9 M10 11V6a2 2 0 0 1 4 0v5' })),
+      h_tasks: () => S('svg', { viewBox: '0 0 24 24', class: 'ni' }, S('rect', { x: 4, y: 4, width: 16, height: 16 }), S('path', { d: 'M8 12l3 3 5-6' })),
+      h_time: () => S('svg', { viewBox: '0 0 24 24', class: 'ni' }, S('circle', { cx: 12, cy: 12, r: 8 }), S('path', { d: 'M12 7v5l3 2' })),
+    };
+    const prevRender = render;
+    render = function () {           // eslint-disable-line no-func-assign
+      const logged = !!(user && state);
+      modeBtn.hidden = !logged;
+      if (!logged) return prevRender();
+      const home = isHome();
+      modeBtn.textContent = home ? 'Кухня' : 'Дім';
+      modeBtn.title = home ? 'Повернутися до кухні' : 'Режим «Дім»: прибирання й задачі';
+      if (!home && /^h_/.test(state.tab)) state.tab = kTab || 'pantry';
+      if (home && !/^h_/.test(state.tab)) { kTab = state.tab; state.tab = hTab || 'h_today'; }
+      TABS.splice(0, TABS.length, ...(home ? HOME_TABS : KITCHEN_TABS));
+      document.body.classList.toggle('home-mode', home);
+      prevRender();
+      if (home) {
+        const nav = document.getElementById('nav');
+        if (nav && !nav.hidden && mq.matches) {
+          nav.replaceChildren(...HOME_TABS.map(([k, l]) => h('button', { type: 'button', 'aria-current': state.tab === k ? 'page' : null,
+            onclick: () => { state.tab = k; hTab = k; saveLocal(); render(); } }, HI[k](), h('span', {}, l))));
+        }
+      }
+    };
+  })();
 
   Object.assign(X, { exportText, exportCsv, editProduct, editRecipe, editReceipt, parseListLocal, toggleFreeze, priceModal, shoppingItems, minShortages, parseQty, unitTable, todayPicks, thawTips });
   render();
