@@ -431,3 +431,17 @@ svg.i { width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:1.
   .time-row { grid-template-columns:1fr 100px 80px; } .time-row .mute { display:none; }
   .h-row .h-time { display:none; }
 }
+
+/* v8: дім — серія, вікна, перенесення, підзадачі */
+.age { font-size:12px; padding:2px 8px; border:1px solid var(--line); white-space:nowrap; }
+.age-g { color:#2e7d4f; border-color:#2e7d4f; } .age-y { color:#a8741a; border-color:#a8741a; } .age-r { color:#c0392b; border-color:#c0392b; } .age-n { color:var(--mute); }
+.h-day.over { outline:2px dashed var(--gold); outline-offset:-6px; }
+.h-list li[draggable="true"] { cursor:grab; }
+.h-list li { align-items:baseline; } .h-n { flex:1; } .h-mv { padding:0 4px; text-decoration:none; font-size:16px; }
+.time-row { grid-template-columns:130px auto 1fr 1fr; }
+.time-w { display:flex; gap:6px; align-items:center; } .time-w input { width:100%; min-width:0; }
+.time-off { display:flex; gap:6px; align-items:center; text-transform:none; letter-spacing:0; font-size:14px; color:var(--mute); }
+.h-subs { display:grid; gap:4px; padding:2px 0 10px 34px; }
+.h-sub { display:flex; gap:8px; align-items:center; text-transform:none; letter-spacing:0; font-size:14px; color:var(--fg); font-weight:300; cursor:pointer; }
+.h-sub.done { text-decoration:line-through; opacity:.55; }
+@media (max-width:600px) { .time-row { grid-template-columns:1fr 1fr; } .time-row > span:first-child { grid-column:1 / -1; font-weight:500; } .time-w { grid-column:1 / -1; } }
