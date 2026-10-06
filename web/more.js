@@ -1105,7 +1105,7 @@
       }
       const i = log.indexOf(item.key);
       if (on && i < 0) log.push(item.key); if (!on && i >= 0) log.splice(i, 1);
-      save(); render();
+      save(); render(); setTimeout(() => { pushSync(false); }, 300);
     }
     function postpone(item) {
       const hm = HM(); const tomorrow = P.addDays(todayD(), 1);
@@ -1450,6 +1450,80 @@
         h('p', { class: 'note' }, 'Задачі з дедлайном потрапляють у розклад до цієї дати, а прострочені одразу на сьогодні. Повторювані з\u02bcявляються в розкладі самі, а коли забуваєш, піднімаються на сьогодні.')];
     }
 
+    // ----- сповіщення на телефоні (Web Push, коли застосунок закритий) -----
+    const PUSH_KEY = 'ducky.push';
+    const pushSupported = () => typeof navigator !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window && typeof Notification !== 'undefined';
+    let pushVapid = null; let pushSig = '';
+    const pushItems = () => {
+      const hm = HM(); const today = todayD(); const now = Date.now(); const out = [];
+      const at = (date, m) => { const [y, mo, d] = date.split('-').map(Number); return new Date(y, mo - 1, d, Math.floor(m / 60), m % 60).getTime(); };
+      const add = (date, it, snapItem) => {
+        if (snapItem && isDoneNow(it)) return;
+        const t = at(date, it.startMin);
+        if (t < now - 10 * 60000) return;
+        out.push({ k: date + '|' + it.key, t: 'Дім · зараз', b: it.title + ' (' + mins(it.minutes) + ')', at: t });
+      };
+      if (hm.snap && hm.snap.date === today) for (const it of hm.snap.items) add(today, it, true);
+      const plan = P.planWeek(hm, today);
+      for (let k = 1; k < 3; k++) if (plan.days[k]) for (const it of plan.days[k].items) add(plan.days[k].date, it, false);
+      return out;
+    };
+    async function pushSub(create) {
+      const reg = await navigator.serviceWorker.ready;
+      let sub = await reg.pushManager.getSubscription();
+      if (!sub && create) {
+        if (!pushVapid) { const r = await X.callApi('/api/push', { action: 'key' }); if (!r.ready || !r.key) throw new Error('Сповіщення ще не налаштовані на сервері.'); pushVapid = r.key; }
+        const raw = atob(pushVapid.replace(/-/g, '+').replace(/_/g, '/')); const key = Uint8Array.from(raw, (c) => c.charCodeAt(0));
+        sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+      }
+      return sub;
+    }
+    // повідомляє сервер про актуальні справи (викликається раз на пів хвилини й після змін)
+    async function pushSync(force) {
+      try {
+        if (!user || !state || !state.home || store.get(PUSH_KEY) !== '1' || !pushSupported() || Notification.permission !== 'granted') return;
+        const items = pushItems(); const sig = JSON.stringify(items.map((i) => i.k + i.at));
+        if (!force && sig === pushSig) return;
+        const sub = await pushSub(true); if (!sub) return;
+        const j = sub.toJSON();
+        await X.callApi('/api/push', { action: 'subscribe', sub: { endpoint: j.endpoint, keys: j.keys }, items });
+        pushSig = sig;
+      } catch (e) { /* без звʼязку: спробуємо наступного разу */ }
+    }
+    function pushCard() {
+      const msg = h('p', { class: 'note', role: 'status', style: 'margin:8px 0 0' });
+      const say = (t) => { msg.textContent = t; X.toast(t); };
+      const box = h('input', { type: 'checkbox', checked: store.get(PUSH_KEY) === '1' ? true : null, disabled: pushSupported() ? null : true, onchange: async (e) => {
+        const on = e.target.checked;
+        try {
+          if (on) {
+            if (Notification.permission === 'default') await Notification.requestPermission();
+            if (Notification.permission !== 'granted') throw new Error('Дозволь сповіщення для цього сайту в налаштуваннях телефона.');
+            store.set(PUSH_KEY, '1'); await pushSub(true); pushSig = ''; await pushSync(true);
+            say('Сповіщення на цьому пристрої увімкнено.');
+          } else {
+            store.set(PUSH_KEY, '0');
+            const sub = await pushSub(false);
+            if (sub) { const ep = sub.endpoint; await sub.unsubscribe(); try { await X.callApi('/api/push', { action: 'unsubscribe', endpoint: ep }); } catch (er) { /* не критично */ } }
+            say('Сповіщення на цьому пристрої вимкнено.');
+          }
+        } catch (err) { e.target.checked = false; store.set(PUSH_KEY, '0'); say(err.message || 'Не вдалося увімкнути сповіщення.'); }
+      } });
+      const test = h('button', { class: 'ghost', type: 'button', onclick: async () => {
+        try {
+          const sub = await pushSub(false); if (!sub) throw new Error('Спершу увімкни сповіщення.');
+          await pushSync(true); await X.callApi('/api/push', { action: 'test', endpoint: sub.endpoint }); say('Надіслано. Має зʼявитись за кілька секунд.');
+        } catch (err) { say(err.message || 'Не вдалося надіслати.'); }
+      } }, 'Надіслати пробне');
+      const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) && !(window.navigator.standalone || (window.matchMedia && matchMedia('(display-mode: standalone)').matches));
+      return h('div', { class: 'card', style: 'margin-top:20px' }, h('div', { class: 'tag' }, 'Сповіщення на телефоні'),
+        h('label', { class: 'check', style: 'display:flex;gap:10px;align-items:center;text-transform:none;letter-spacing:0;font-size:15px;margin-top:8px' }, box, 'Нагадувати про справи, навіть коли застосунок закритий'),
+        h('div', { class: 'toolbar', style: 'margin-top:10px' }, test), msg,
+        h('p', { class: 'note', style: 'margin:8px 0 0' }, pushSupported() ? (ios ? 'На iPhone спершу додай застосунок на екран «Додому»: Safari → Поділитись → «На екран Додому», і відкрий його звідти. Лише там сповіщення дозволені.' : 'Увімкни це на кожному пристрої, де хочеш отримувати нагадування.') : 'Цей браузер не підтримує сповіщення. На iPhone потрібен iOS 16.4 або новіший і застосунок, доданий на екран «Додому».'));
+    }
+    setInterval(() => { pushSync(false); }, 30000);
+    setTimeout(() => { pushSync(false); }, 6000);
+
     // ----- Мій час (вікна часу на кожен день + нагадування) -----
     function viewTime() {
       const hm = HM(); const hours = P.hoursOf(hm);
@@ -1487,7 +1561,8 @@
           h('p', { class: 'note', style: 'margin:8px 0 0' }, 'Увімкнено: якщо в дні лишається час, у нього підтягуються справи, що мають бути за 1–4 дні. Вимкнено: у плані лише те, що вже настав строк, а решта часу вільна.')),
         h('div', { class: 'card', style: 'margin-top:20px' }, h('div', { class: 'tag' }, 'Нагадування'),
           h('label', { class: 'check', style: 'display:flex;gap:10px;align-items:center;text-transform:none;letter-spacing:0;font-size:15px;margin-top:8px' }, notifyBox, 'Нагадувати, коли настав час справи зі списку на сьогодні'),
-          h('p', { class: 'note', style: 'margin:8px 0 0' }, 'Працює, поки застосунок відкритий (вкладка або встановлений на екран). Коли закрито, браузер не дозволяє сайтам нагадувати, для цього потрібен окремий сервер сповіщень.')), note];
+          h('p', { class: 'note', style: 'margin:8px 0 0' }, 'Працює, поки застосунок відкритий. Щоб нагадувало й коли він закритий, увімкни сповіщення на телефоні нижче.')),
+        pushCard(), note];
     }
 
     // нагадування: раз на пів хвилини дивимось, чи не час для справи

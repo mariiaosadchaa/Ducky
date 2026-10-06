@@ -78,9 +78,21 @@ Supabase → Authentication → URL Configuration:
 
 `npm run dev` тепер сам обслуговує і `/api/...`, тож розпізнавання чека, рецепти від ШІ, імпорт рецепта і розбір списку працюють на localhost:3000.
 
-1. У корені проєкту (де лежить `package.json`) скопіюйте файл `.env.local.example` і назвіть копію `.env.local`.
-2. Відкрийте `.env.local` і після `GEMINI_API_KEY=` впишіть свій ключ з https://aistudio.google.com/apikey (без пробілів і лапок).
+1. У корені проєкту (там, де лежить `package.json`) створіть новий текстовий файл з назвою `.env.local` (з крапкою на початку, без `.txt`).
+2. Впишіть у нього один рядок: `GEMINI_API_KEY=ваш_ключ` (ключ з https://aistudio.google.com/apikey, без пробілів і лапок).
 3. Зупиніть сервер (Ctrl+C) і запустіть знову: `npm run dev`. У вікні має бути рядок «ШІ: ключ Gemini знайдено».
 
 Файл `.env.local` не потрапляє в git, ключ нікуди не передається. Supabase-налаштування беруться з `web/config.js`.
 `start-local.bat` це не вміє, для ШІ запускайте саме `npm run dev`.
+
+## Сповіщення «Дім», коли застосунок закритий
+
+1. Supabase → SQL Editor: виконайте останній блок `docs/supabase.sql` (таблиця `ducky_push`).
+2. У папці проєкту виконайте `node api/push.js`. Виведе три рядки: `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `CRON_SECRET`. Нікому їх не показуйте.
+3. Vercel → Project → Settings → Environment Variables: додайте ці три змінні плюс `SUPABASE_SERVICE_KEY`
+   (Supabase → Project Settings → API → «service_role», секретний ключ), `SUPABASE_URL` і `SUPABASE_ANON_KEY` уже мають бути.
+   Після цього Deployments → Redeploy.
+4. Безкоштовний пінгер (наприклад cron-job.org): URL `https://ВАШ-САЙТ.vercel.app/api/push?token=ВАШ_CRON_SECRET`, метод GET, щохвилини.
+   Відповідь `{"sent":0,...}` означає, що все працює.
+5. У застосунку: Дім → «Мій час» → «Сповіщення на телефоні» → увімкнути → «Надіслати пробне».
+   На iPhone застосунок має бути доданий на екран «Додому» (iOS 16.4+), і відкривати його треба звідти.

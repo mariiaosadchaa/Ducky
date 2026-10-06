@@ -51,3 +51,17 @@ create policy "ducky household update" on public.ducky_household_data
 do $$ begin
   alter publication supabase_realtime add table public.ducky_household_data;
 exception when duplicate_object then null; end $$;
+
+-- ============================================================
+-- Сповіщення «Дім» (коли застосунок закритий). Безпечно запускати повторно.
+-- Політик немає навмисно: таблиця доступна лише серверу (сервісний ключ).
+-- ============================================================
+create table if not exists public.ducky_push (
+  endpoint text primary key,
+  user_id uuid not null references auth.users (id) on delete cascade,
+  sub jsonb not null,
+  items jsonb not null default '[]'::jsonb,
+  sent jsonb not null default '[]'::jsonb,
+  updated_at timestamptz not null default now()
+);
+alter table public.ducky_push enable row level security;
