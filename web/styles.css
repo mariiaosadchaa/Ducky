@@ -445,3 +445,16 @@ svg.i { width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:1.
 .h-sub { display:flex; gap:8px; align-items:center; text-transform:none; letter-spacing:0; font-size:14px; color:var(--fg); font-weight:300; cursor:pointer; }
 .h-sub.done { text-decoration:line-through; opacity:.55; }
 @media (max-width:600px) { .time-row { grid-template-columns:1fr 1fr; } .time-row > span:first-child { grid-column:1 / -1; font-weight:500; } .time-w { grid-column:1 / -1; } }
+
+/* v9: iPhone — швидке додавання, свайпи, великі зони натискання */
+.fab { position:fixed; right:calc(18px + env(safe-area-inset-right)); bottom:calc(86px + env(safe-area-inset-bottom)); z-index:40; width:56px; height:56px; border-radius:50%; border:0; background:var(--btn-bg); color:var(--btn-fg); font:300 32px/1 var(--sans); box-shadow:0 12px 30px -10px var(--glow); cursor:pointer; }
+.fab[hidden] { display:none; }
+@media (min-width:701px) { .fab { display:none; } }
+.h-row { touch-action:pan-y; transition:transform .18s var(--ease), background .2s; }
+.h-row.sw-r { background:rgba(46,125,79,.14); } .h-row.sw-l { background:rgba(168,116,26,.16); }
+@media (pointer:coarse) {
+  .h-row { min-height:54px; } .h-row input[type=checkbox] { width:24px; height:24px; }
+  .shop-x, .h-mv { padding:10px 8px; min-width:44px; min-height:44px; }
+  .chore-row button { min-height:44px; }
+  input, select, textarea { font-size:16px; }
+}
