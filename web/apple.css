@@ -38,7 +38,7 @@
 }
 
 /* ---------- 2. Прибрано важкі ефекти ---------- */
-.bg, #sparks, .cursor-glow, .pond, .ripple, .spark, .bubble, .ink { display:none !important; }
+.cursor-glow, .ripple, .spark, .ink { display:none !important; }   /* живий фон (.bg, іскри, ставок) повернуто */
 h1 em { background:none; -webkit-text-fill-color:currentColor; color:var(--gold); animation:none; padding:0; font-style:italic; }
 .card::before, button.primary::after { display:none; }
 .w { animation:none; display:inline; }

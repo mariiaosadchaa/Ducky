@@ -864,7 +864,7 @@ function applyTheme() {
   const dark = saved ? saved === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
   $theme.textContent = dark ? 'Світла тема' : 'Темна тема';
-  const tc = document.querySelector('meta[name="theme-color"]'); if (tc) tc.content = dark ? '#080807' : '#f4f1ec';
+  const tc = document.querySelector('meta[name="theme-color"]'); if (tc) tc.content = dark ? '#0b1220' : '#f4f6fb';
   if (window.DuckyFX) window.DuckyFX.refreshColors();
 }
 

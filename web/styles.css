@@ -328,6 +328,15 @@ input[type="date"] { min-height:46px; }
   #who, #logoutBtn, #themeBtn, #installBtn { display:none; }
   #nav[hidden] ~ .right #themeBtn { display:inline-block; }
   .sync { font-size:11px; max-width:90px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  /* шапка в два рядки: угорі логотип, статус і режим, нижче на всю ширину вибір сімʼї */
+  header.top { flex-wrap:wrap; row-gap:8px; align-items:center; }
+  header.top .right { display:contents; }
+  header.top .brand { order:1; }
+  header.top .sync { order:2; flex:1 1 0; min-width:0; max-width:none; text-align:right; }
+  header.top #modeBtn { order:3; margin-right:0; flex:none; }
+  header.top #themeBtn { order:3; flex:none; }
+  header.top #scopeSel { order:4; flex:1 1 100%; width:100%; max-width:none; font-size:15px; padding:10px 12px; }
+  header.top #scopeSel[hidden] { display:none; }
   main { padding:4px 16px 20px; }
   h1 { font-size:36px; margin:6px 0 20px; }
   .stats { grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
