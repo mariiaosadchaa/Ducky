@@ -1120,6 +1120,7 @@
       hm.known = cur;
       const sg = settingsOf(hm); if (hm.sh !== sg) { hm.sh = sg; hm.smt = now; }
       // люди та їхні графіки: кожен графік зливається окремо, за часом зміни
+      const prj = JSON.stringify(hm.pri || null); if (hm.prh !== prj) { hm.prh = prj; hm.prmt = now; }
       const pj = JSON.stringify(hm.people || []); if (hm.pph !== pj) { hm.pph = pj; hm.pmt = now; }
       if (hm.hoursBy && typeof hm.hoursBy === 'object') {
         if (!hm.hbh) hm.hbh = {}; if (!hm.hbm) hm.hbm = {};
@@ -1158,6 +1159,7 @@
       for (const key of Object.keys(lg)) if (lg[key][0] === 1) { const i = key.indexOf('|'); (log[key.slice(0, i)] || (log[key.slice(0, i)] = [])).push(key.slice(i + 1)); }
       out.log = log;
       out.hist = { ...(R.hist || {}), ...(L.hist || {}) };
+      if ((R.prmt || 0) > (L.prmt || 0)) { out.pri = R.pri; out.prmt = R.prmt; out.prh = R.prh; }
       if ((R.pmt || 0) > (L.pmt || 0)) { out.people = R.people; out.pmt = R.pmt; out.pph = R.pph; }
       const hb = { ...(R.hoursBy || {}) }; const hbm = { ...(R.hbm || {}) }; const hbh = { ...(R.hbh || {}) };
       for (const nme of Object.keys(L.hoursBy || {})) { if (!(nme in hb) || ((L.hbm || {})[nme] || 0) >= (hbm[nme] || 0)) { hb[nme] = L.hoursBy[nme]; hbm[nme] = (L.hbm || {})[nme] || 0; hbh[nme] = (L.hbh || {})[nme]; } }
@@ -1207,7 +1209,7 @@
   (function homeMode() {
     const P = window.DuckyPlan;
     const MODE_KEY = 'ducky.mode';
-    const HOME_TABS = [['h_today', 'Сьогодні'], ['h_week', 'Розклад'], ['h_clean', 'Прибирання'], ['h_tasks', 'Задачі'], ['h_time', 'Мій час']];
+    const HOME_TABS = [['h_today', 'Сьогодні'], ['h_week', 'Розклад'], ['h_clean', 'Прибирання'], ['h_tasks', 'Задачі'], ['h_stats', 'Успіхи'], ['h_time', 'Мій час']];
     const KITCHEN_TABS = TABS.slice();
     let kTab = 'pantry'; let hTab = 'h_today';
     const isHome = () => store.get(MODE_KEY) === 'home';
@@ -1407,13 +1409,15 @@
       // історія для серії
       const must = snap.items.filter(isMustItem);
       const entry = { p: snap.items.length, d: dn.length, mp: must.length, md: must.filter(isDoneNow).length };
+      if (multi()) { const w = {}; snap.items.forEach((i) => { const k = i.who || '—'; const e2 = w[k] || (w[k] = [0, 0]); e2[0]++; if (isDoneNow(i)) e2[1]++; }); entry.w = w; }
       if (!hm.hist) hm.hist = {};
       const prev = hm.hist[today];
-      if (!prev || prev.p !== entry.p || prev.d !== entry.d || prev.mp !== entry.mp || prev.md !== entry.md) {
+      if (!prev || prev.p !== entry.p || prev.d !== entry.d || prev.mp !== entry.mp || prev.md !== entry.md || JSON.stringify(prev.w || null) !== JSON.stringify(entry.w || null)) {
         hm.hist[today] = entry; for (const d of Object.keys(hm.hist)) if (d < P.addDays(today, -90)) delete hm.hist[d]; save();
       }
       const streak = streakInfo(hm, today);
       return [...header('Дім · ' + dayName(today, true), 'Справи на', 'сьогодні'), meAsk(),
+        priCard(),
         statsRow([['Залишилось справ', open0.length], ['Зроблено', dn.length], ['Серія днів поспіль', streak]]),
         snap.items.length
           ? h('div', { class: 'card' },
@@ -1880,8 +1884,102 @@
       } catch (e) { /* ігноруємо */ }
     }, 30000);
 
+
+    // ----- пріоритети тижня: одна головна ціль і три найважливіші справи -----
+    function priCard() {
+      const hm = HM(); const today = todayD(); const wk = P.addDays(today, -P.wdOf(today));
+      if (!hm.pri || hm.pri.wk !== wk) hm.pri = { wk, goal: '', gd: false, t: [{ t: '', d: false }, { t: '', d: false }, { t: '', d: false }] };
+      const pr = hm.pri; while (pr.t.length < 3) pr.t.push({ t: '', d: false });
+      const mk = (get, set, ph, big) => {
+        const cb = h('input', { type: 'checkbox', checked: get().d ? true : null, 'aria-label': 'Зроблено', onchange: (e) => { set({ ...get(), d: e.target.checked }); save(); render(); if (e.target.checked) X.toast('Є! ' + (get().t || 'Пріоритет') + ' зроблено'); } });
+        const tx = h('input', { value: get().t, placeholder: ph, 'aria-label': ph, style: big ? 'font-size:17px' : '' });
+        tx.addEventListener('change', () => { set({ ...get(), t: tx.value.trim() }); save(); render(); });
+        return h('div', { class: 'toolbar', style: 'align-items:center;gap:10px;margin:6px 0;flex-wrap:nowrap' }, cb, tx);
+      };
+      const all = [{ t: pr.goal, d: pr.gd }, ...pr.t].filter((x) => x.t); const dn = all.filter((x) => x.d).length;
+      return h('div', { class: 'card', style: 'margin-bottom:20px' }, h('div', { class: 'tag' }, 'Пріоритети тижня' + (all.length ? ' · ' + dn + '/' + all.length : '')),
+        mk(() => ({ t: pr.goal, d: pr.gd }), (v) => { pr.goal = v.t; pr.gd = v.d; }, 'Головна ціль тижня, наприклад: генеральне в ванній', true),
+        pr.t.map((_, i) => mk(() => pr.t[i], (v) => { pr.t[i] = v; }, 'Важлива справа ' + (i + 1))),
+        h('p', { class: 'note', style: 'margin:8px 0 0' }, 'Оновлюється щопонеділка. Бачите обоє, якщо це спільний простір.'));
+    }
+
+    // ----- успіхи: тепловізор, тренд по тижнях, рівень, бос і підказки -----
+    const LEVELS = [[0, 'Яєчко'], [15, 'Каченя'], [50, 'Юний плавець'], [120, 'Домашня качка'], [250, 'Качка-кухар'], [500, 'Володар ставка']];
+    const SHORT = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Нд'];
+    function viewStats() {
+      const hm = HM(); const today = todayD(); const hist = hm.hist || {};
+      const mon = P.addDays(today, -P.wdOf(today)); const start = P.addDays(mon, -77);
+      const pctOf = (e) => (e && e.p > 0 ? e.d / e.p : null);
+      const col = (date) => {
+        if (date > today) return 'transparent'; const e = hist[date]; if (!e) return 'rgba(128,128,128,.10)';
+        if (!e.p) return 'rgba(128,128,128,.18)'; const r = e.d / e.p;
+        return r >= 1 ? 'rgba(var(--spark),.95)' : r >= .5 ? 'rgba(var(--spark),.55)' : r > 0 ? 'rgba(var(--spark),.28)' : 'rgba(224,122,95,.45)';
+      };
+      const grid = h('div', { style: 'display:grid;grid-template-columns:28px repeat(12,1fr);gap:4px;align-items:center;max-width:560px' },
+        ...[0, 1, 2, 3, 4, 5, 6].flatMap((wd) => [h('span', { class: 'mute', style: 'font-size:12px' }, SHORT[wd]),
+          ...Array.from({ length: 12 }, (_, w) => { const date = P.addDays(start, w * 7 + wd); const e = hist[date];
+            return h('div', { title: dayName(date) + (e && e.p ? ': ' + e.d + ' з ' + e.p : date > today ? '' : ': немає даних'), style: 'aspect-ratio:1;min-height:16px;border:1px solid var(--line);background:' + col(date) }); })]));
+      // тижні
+      const weeks = Array.from({ length: 12 }, (_, k) => {
+        const ws = P.addDays(mon, -7 * (11 - k)); let p = 0; let d = 0;
+        for (let j = 0; j < 7; j++) { const e = hist[P.addDays(ws, j)]; if (e) { p += e.p; d += e.d; } }
+        return { ws, p, d, pct: p ? Math.round((d / p) * 100) : null };
+      });
+      const wcol = (v) => (v >= 80 ? 'rgba(110,190,130,.85)' : v >= 50 ? 'rgba(var(--spark),.8)' : 'rgba(224,122,95,.8)');
+      const bars = weeks.map((w) => h('div', { style: 'display:flex;align-items:center;gap:10px;margin:4px 0' },
+        h('span', { class: 'mute', style: 'width:64px;font-size:13px' }, dayName(w.ws).replace(/^[^,]*,\s*/, '')),
+        h('div', { style: 'flex:1;height:10px;background:rgba(128,128,128,.12)' }, w.pct == null ? null : h('div', { style: 'height:100%;width:' + w.pct + '%;background:' + wcol(w.pct) })),
+        h('span', { style: 'width:44px;text-align:right;font-size:13px' }, w.pct == null ? '—' : w.pct + '%')));
+      const cur = weeks[11]; const prv = weeks[10];
+      const cmp = cur.pct != null && prv.pct != null ? (cur.pct - prv.pct === 0 ? 'Так само, як минулого тижня.' : (cur.pct > prv.pct ? 'Краще, ніж минулого тижня: +' : 'Гірше, ніж минулого тижня: −') + Math.abs(cur.pct - prv.pct) + ' п. п.') : 'Порівняння зʼявиться, коли буде два тижні даних.';
+      // рівень
+      const total = Object.keys(hist).reduce((s2, k) => s2 + (hist[k].d || 0), 0);
+      let li = 0; LEVELS.forEach((l, i) => { if (total >= l[0]) li = i; });
+      const nxt = LEVELS[li + 1]; const lvPct = nxt ? Math.round(((total - LEVELS[li][0]) / (nxt[0] - LEVELS[li][0])) * 100) : 100;
+      const streak = streakInfo(hm, today);
+      // бос: найбільш запущена повторювана справа
+      const rec = hm.chores.map((c) => ({ title: c.title, room: c.room, every: Number(c.every) || 7, last: c.last }))
+        .concat(hm.tasks.filter((t) => Number(t.every) > 0 && !t.done).map((t) => ({ title: t.title, room: t.room, every: Number(t.every), last: t.last })))
+        .filter((c) => c.last).map((c) => ({ ...c, ago: P.diff(today, c.last), r: P.diff(today, c.last) / c.every })).filter((c) => c.r > 1).sort((a, b) => b.r - a.r);
+      const boss = rec[0];
+      // за днями тижня
+      const byWd = Array.from({ length: 7 }, () => [0, 0]);
+      for (const k of Object.keys(hist)) { const e = hist[k]; if (e && e.p > 0) { const w = P.wdOf(k); byWd[w][0] += e.p; byWd[w][1] += e.d; } }
+      const ranked = byWd.map((v, i) => ({ i, pct: v[0] >= 3 ? Math.round((v[1] / v[0]) * 100) : null })).filter((x) => x.pct != null).sort((a, b) => b.pct - a.pct);
+      // кімнати, які найдовше без уваги
+      const roomAge = hm.rooms.map((r) => { const cs = hm.chores.filter((c) => c.room === r.id && c.last); if (!cs.length) return null; return { name: r.name, r: cs.reduce((s2, c) => s2 + P.diff(today, c.last) / (Number(c.every) || 7), 0) / cs.length }; }).filter(Boolean).sort((a, b) => b.r - a.r);
+      // хто більше зробив цього тижня
+      const per = {};
+      if (multi()) for (let j = 0; j < 7; j++) { const e = hist[P.addDays(mon, j)]; if (e && e.w) for (const k of Object.keys(e.w)) { const a = per[k] || (per[k] = [0, 0]); a[0] += e.w[k][0]; a[1] += e.w[k][1]; } }
+      const pk = Object.keys(per).filter((k) => k !== '—').sort((a, b) => per[b][1] - per[a][1]);
+      const perCard = multi() && pk.length ? h('div', { class: 'card', style: 'margin-top:20px' }, h('div', { class: 'tag' }, 'Цього тижня'),
+        pk.map((k) => h('div', { style: 'display:flex;align-items:center;gap:10px;margin:6px 0' }, h('span', { style: 'width:110px' }, k),
+          h('div', { style: 'flex:1;height:10px;background:rgba(128,128,128,.12)' }, h('div', { style: 'height:100%;width:' + (per[k][0] ? Math.round((per[k][1] / per[k][0]) * 100) : 0) + '%;background:rgba(var(--spark),.85)' })),
+          h('span', { class: 'mute', style: 'width:70px;text-align:right;font-size:13px' }, per[k][1] + ' з ' + per[k][0]))),
+        per[pk[0]][1] > (per[pk[1]] ? per[pk[1]][1] : -1) ? h('p', { class: 'mute', style: 'margin:8px 0 0' }, 'Більше зробив(ла): ' + pk[0] + '. Але ж це команда.') : h('p', { class: 'mute', style: 'margin:8px 0 0' }, 'Порівну. Гарна команда.')) : null;
+      const enough = Object.keys(hist).length >= 5;
+      const tips = [];
+      if (enough && ranked.length >= 2) { tips.push('Найкращий день: ' + WD[ranked[0].i].toLowerCase() + ' (' + ranked[0].pct + '%).'); tips.push('Найважчий: ' + WD[ranked[ranked.length - 1].i].toLowerCase() + ' (' + ranked[ranked.length - 1].pct + '%). Можна поставити туди менше справ у «Мій час».'); }
+      if (roomAge[0] && roomAge[0].r > 1) tips.push('Найдовше без уваги: ' + roomAge[0].name + '.');
+      return [...header('Дім · успіхи', 'Мої', 'успіхи'),
+        statsRow([['Серія днів поспіль', streak], ['Цей тиждень', cur.pct || 0, '%'], ['Зроблено за 90 днів', total]]),
+        h('div', { class: 'card' }, h('div', { class: 'tag' }, 'Рівень каченяти'),
+          h('h3', { style: 'margin:6px 0' }, LEVELS[li][1]),
+          h('div', { class: 'h-prog', role: 'progressbar', 'aria-valuenow': lvPct, 'aria-valuemin': 0, 'aria-valuemax': 100 }, h('span', { style: 'width:' + lvPct + '%' })),
+          h('p', { class: 'mute', style: 'margin:8px 0 0' }, nxt ? 'До рівня «' + nxt[1] + '» ще ' + (nxt[0] - total) + ' справ.' : 'Найвищий рівень. Ставок ваш.')),
+        h('div', { class: 'card', style: 'margin-top:20px' }, h('div', { class: 'tag' }, 'Бос тижня'),
+          boss ? h('p', { style: 'margin:6px 0 0' }, h('b', {}, boss.title), boss.room ? ' · ' + roomName(boss.room) : '', h('span', { class: 'mute' }, ' · не робили ' + boss.ago + ' дн., а норма раз на ' + boss.every + '. Переможіть, і серія подякує.'))
+            : h('p', { class: 'mute', style: 'margin:6px 0 0' }, 'Боса немає: усе повторюване в нормі.')),
+        h('div', { class: 'card', style: 'margin-top:20px' }, h('div', { class: 'tag' }, 'Останні 12 тижнів'), h('div', { style: 'margin-top:12px' }, grid),
+          h('p', { class: 'note', style: 'margin:10px 0 0' }, 'Чим яскравіша клітинка, тим більше зроблено з плану. Червоні дні: нічого. Прозорі: ще немає даних.')),
+        h('div', { class: 'card', style: 'margin-top:20px' }, h('div', { class: 'tag' }, 'Виконання по тижнях'), h('div', { style: 'margin-top:10px' }, bars), h('p', { class: 'mute', style: 'margin:8px 0 0' }, cmp)),
+        perCard,
+        h('div', { class: 'card', style: 'margin-top:20px' }, h('div', { class: 'tag' }, 'Підказки'),
+          tips.length ? h('ul', { style: 'margin:8px 0 0;padding-left:18px' }, tips.map((x) => h('li', {}, x))) : h('p', { class: 'mute', style: 'margin:6px 0 0' }, 'Підказки зʼявляться, коли накопичиться кілька днів історії.'))];
+    }
+
     const clean = (fn) => () => fn().filter((x) => x != null && x !== false);
-    Object.assign(VIEWS, { h_today: clean(viewToday), h_week: clean(viewWeek), h_clean: clean(viewClean), h_tasks: clean(viewTasks), h_time: clean(viewTime) });
+    Object.assign(VIEWS, { h_today: clean(viewToday), h_week: clean(viewWeek), h_clean: clean(viewClean), h_tasks: clean(viewTasks), h_time: clean(viewTime), h_stats: clean(viewStats) });
 
     // ----- перемикач режиму й навігація -----
     const modeBtn = h('button', { id: 'modeBtn', class: 'ghost', type: 'button' });
@@ -1898,6 +1996,7 @@
       h_week: () => ICON.menu(),
       h_clean: () => S('svg', { viewBox: '0 0 24 24', class: 'ni' }, S('path', { d: 'M5 20h14 M8 20l1-9h6l1 9 M10 11V6a2 2 0 0 1 4 0v5' })),
       h_tasks: () => S('svg', { viewBox: '0 0 24 24', class: 'ni' }, S('rect', { x: 4, y: 4, width: 16, height: 16 }), S('path', { d: 'M8 12l3 3 5-6' })),
+      h_stats: () => S('svg', { viewBox: '0 0 24 24', class: 'ni' }, S('path', { d: 'M4 20V10 M10 20V4 M16 20v-7 M22 20H2' })),
       h_time: () => S('svg', { viewBox: '0 0 24 24', class: 'ni' }, S('circle', { cx: 12, cy: 12, r: 8 }), S('path', { d: 'M12 7v5l3 2' })),
     };
     const prevRender = render;
