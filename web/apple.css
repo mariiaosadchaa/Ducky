@@ -1,0 +1,199 @@
+/* ============================================================
+   Ducky: стиль Apple (iOS) + «люкс» шампань.
+   Підключається ПІСЛЯ styles.css і перевизначає його.
+   Той самий підхід, що redesign.css у Rivna:
+   заливки замість рамок, пігулкові кнопки, скляні панелі,
+   системний шрифт; серифний лише для великих заголовків і сум.
+   Контраст рахований за hex: основний текст 17:1, другорядний >5:1,
+   золото для тексту >5:1 (світла 5.2, темна 10).
+   ============================================================ */
+
+/* ---------- 1. Токени ---------- */
+:root, :root[data-theme="dark"] {
+  --bg:#080807; --panel:#121110; --panel-2:#1a1917;
+  --fill:rgba(246,239,227,.08); --fill-2:rgba(246,239,227,.05);
+  --fg:#f6efe3; --mute:#9d978c; --line:rgba(246,239,227,.10);
+  --gold:#d6ba8a; --gold-hi:#e6cfa6; --gold-soft:rgba(214,186,138,.14);
+  --btn-bg:#d6ba8a; --btn-fg:#0e0d0b; --danger:#e38a73; --pos:#86c7a0;
+  --card:#121110; --spot:rgba(214,186,138,.10); --glow:rgba(214,186,138,.22);
+  --glass:rgba(18,17,16,.74);
+  --duck-body:#d6ba8a; --duck-beak:#efb74a; --duck-eye:#0e0d0b;
+  --r-xl:22px; --r-lg:16px; --r-md:12px;
+  --shadow:0 0 0 1px rgba(246,239,227,.05);
+  --sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",system-ui,Roboto,"Helvetica Neue",Arial,sans-serif;
+  --serif:'Cormorant Garamond',"Playfair Display",Georgia,serif;
+  color-scheme:dark;
+}
+:root[data-theme="light"] {
+  --bg:#f4f1ec; --panel:#fffdfa; --panel-2:#f7f4ef;
+  --fill:rgba(28,24,18,.06); --fill-2:rgba(28,24,18,.04);
+  --fg:#0e0d0b; --mute:#6b665d; --line:rgba(28,24,18,.10);
+  --gold:#7d5f32; --gold-hi:#a98349; --gold-soft:rgba(179,145,91,.16);
+  --btn-bg:#0e0d0b; --btn-fg:#f6efe3; --danger:#a3402c; --pos:#2f7a55;
+  --card:#fffdfa; --spot:rgba(179,145,91,.12); --glow:rgba(179,145,91,.28);
+  --glass:rgba(244,241,236,.78);
+  --duck-body:#f7c948; --duck-beak:#f08a24; --duck-eye:#0e0d0b;
+  --shadow:0 1px 1px rgba(40,30,15,.03), 0 10px 30px -14px rgba(40,30,15,.12);
+  color-scheme:light;
+}
+
+/* ---------- 2. Прибрано важкі ефекти ---------- */
+.bg, #sparks, .cursor-glow, .pond, .ripple, .spark, .bubble, .ink { display:none !important; }
+h1 em { background:none; -webkit-text-fill-color:currentColor; color:var(--gold); animation:none; padding:0; font-style:italic; }
+.card::before, button.primary::after { display:none; }
+.w { animation:none; display:inline; }
+
+/* ---------- 3. Основа й типографіка ---------- */
+html, body { background:var(--bg); }
+body { font:400 16px/1.5 var(--sans); color:var(--fg); -webkit-font-smoothing:antialiased; }
+h1 { font:400 clamp(36px,5vw,52px)/1.05 var(--serif); letter-spacing:-.015em; margin:6px 0 24px; }
+h2 { font:500 24px/1.2 var(--serif); color:var(--fg); letter-spacing:-.01em; }
+h3 { letter-spacing:-.01em; }
+.eyebrow, .tag, label, th, .stat-l, .or, .ring-l {
+  font-family:var(--sans); font-size:11.5px; font-weight:600; letter-spacing:.08em; text-transform:uppercase; }
+.eyebrow { color:var(--gold); }
+.tag { color:var(--gold); }
+label { color:var(--mute); gap:6px; }
+label.check, .shop-row, .h-sub, .time-off { font-family:var(--sans); font-size:15px; font-weight:400; letter-spacing:0; text-transform:none; color:var(--fg); }
+.mute, .note, .empty { color:var(--mute); }
+.stat-n, .total, .ring-n, .lbl .wt { font-family:var(--serif); font-weight:500; letter-spacing:-.01em; font-variant-numeric:lining-nums tabular-nums; }
+.stat-n { font-size:40px; color:var(--fg); }
+.total { font-size:34px; color:var(--gold); }
+td.name, .cards h3, .cook-row .name, .lbl .nm, .daycard header b, details.archive summary, .dz-t {
+  font-family:var(--sans); font-weight:600; letter-spacing:-.01em; }
+td.name { font-size:17px; } .cards h3 { font-size:20px; } .lbl .nm { font-size:16px; } .daycard header b { font-size:17px; } .dz-t { font-size:18px; }
+details.archive summary { font-size:17px; }
+.lbl .wt { font-size:28px; }
+
+/* ---------- 4. Шапка: скло + пігулкова навігація ---------- */
+header.top { position:sticky; top:0; z-index:40; padding:10px 32px; gap:14px; flex-wrap:nowrap;
+  background:var(--glass); -webkit-backdrop-filter:blur(30px) saturate(190%); backdrop-filter:blur(30px) saturate(190%);
+  border-bottom:1px solid var(--line); }
+.brand span { font:500 26px var(--serif); letter-spacing:0; }
+.brand svg { filter:none; width:46px; height:46px; margin:-6px -2px -6px 0; }
+nav { gap:2px; flex-wrap:wrap; }
+nav button { border:0; border-radius:999px; padding:8px 11px; font:500 14px/1 var(--sans); letter-spacing:0; text-transform:none;
+  color:var(--mute); transition:background .2s, color .2s; }
+nav button:hover { color:var(--fg); background:var(--fill-2); }
+nav button[aria-current="page"] { background:var(--fg); color:var(--bg); border-bottom-color:transparent; }
+.right { gap:6px; flex:none; }
+.right .ghost { min-height:32px; padding:0 12px; font-size:13px; font-weight:500; white-space:nowrap; }
+.who, .sync { font-size:13px; color:var(--mute); }
+@media (max-width:1240px) { .who { display:none; } }
+@media (max-width:1100px) { header.top { flex-wrap:wrap; } nav { order:3; flex-basis:100%; justify-content:flex-start; } }
+main { padding:28px 40px 40px; max-width:1180px; }
+
+/* ---------- 5. Картки ---------- */
+.card { background:var(--panel); border:0; border-radius:var(--r-xl); padding:24px 26px; box-shadow:var(--shadow);
+  backdrop-filter:none; -webkit-backdrop-filter:none; overflow:visible; transition:none; }
+:root[data-theme="dark"] .card { box-shadow:0 0 0 1px var(--line); }
+.card:hover, .cards .card:hover { transform:none; box-shadow:var(--shadow); border-color:transparent; }
+:root[data-theme="dark"] .card:hover { box-shadow:0 0 0 1px var(--line); }
+.cards .card { transform:none; }
+.card.gold { background:var(--panel); box-shadow:0 0 0 1px color-mix(in srgb, var(--gold) 45%, transparent); }
+.stats { gap:14px; } .stat { padding:18px 20px; }
+.grid, .stack, .cards { gap:16px; }
+.best { border:0; background:var(--gold-soft); color:var(--gold); border-radius:999px; padding:3px 10px; font-weight:600; font-size:13px; }
+.chip { border:0; background:var(--fill); border-radius:999px; padding:8px 14px; font:500 14px var(--sans); color:var(--fg); transition:background .2s; }
+.chip:hover { background:var(--gold-soft); color:var(--gold); transform:none; }
+.age { border:0; border-radius:999px; padding:3px 9px; background:var(--fill); }
+.st { font-weight:500; }
+
+/* ---------- 6. Кнопки ---------- */
+button.primary, button.ghost, .fab { border:0; border-radius:999px; font:600 15px/1 var(--sans); letter-spacing:0; text-transform:none; min-height:44px;
+  transition:transform .15s, background .2s, opacity .2s; }
+button.primary { background:var(--btn-bg); color:var(--btn-fg); padding:0 24px; }
+button.primary:hover { background:var(--btn-bg); transform:none; box-shadow:0 0 0 1px var(--gold), 0 8px 24px -10px var(--glow); }
+button.ghost { background:var(--fill); color:var(--fg); padding:0 18px; min-height:38px; }
+button.ghost:hover { background:var(--gold-soft); color:var(--gold); transform:none; }
+button.primary:active, button.ghost:active, .fab:active { transform:scale(.97); }
+button.link { color:var(--gold); text-decoration:none; font:500 14px var(--sans); }
+button.link:hover { text-decoration:underline; }
+.ib { border:0; border-radius:50%; background:var(--fill); width:34px; height:34px; color:var(--mute); }
+.ib:hover { background:var(--gold-soft); color:var(--gold); }
+.fab { background:var(--btn-bg); color:var(--btn-fg); font:300 32px/1 var(--sans); padding:0; box-shadow:0 10px 28px -10px rgba(0,0,0,.5); }
+
+/* ---------- 7. Поля ---------- */
+input, select, textarea { background:var(--fill-2); color:var(--fg); border:1px solid transparent; border-radius:var(--r-md);
+  padding:12px 14px; font:400 16px var(--sans); }
+:root[data-theme="light"] input, :root[data-theme="light"] select, :root[data-theme="light"] textarea { background:var(--fill); }
+input::placeholder, textarea::placeholder { color:var(--mute); opacity:.8; }
+input:focus, select:focus, textarea:focus { background:var(--panel); border-color:color-mix(in srgb, var(--gold) 55%, transparent);
+  box-shadow:0 0 0 4px var(--gold-soft); outline:none; }
+button:focus-visible, nav button:focus-visible, .chip:focus-visible, a:focus-visible, summary:focus-visible { outline:2px solid var(--gold); outline-offset:2px; }
+select option { background:var(--panel); color:var(--fg); }
+input[type="checkbox"] { accent-color:var(--gold); width:20px; height:20px; }
+.menu input { padding:8px 10px; font-size:14px; }
+select.scope { padding:8px 12px; font-size:13px; border-radius:999px; }
+
+/* ---------- 8. Таблиці як списки ---------- */
+th { color:var(--mute); border-bottom:1px solid var(--line); font-size:11.5px; letter-spacing:.08em; }
+td { border-bottom:1px solid var(--line); }
+tr:hover td { background:transparent; }
+table.pt th { letter-spacing:.08em; }
+.row-line, .cook-row, .shop-row, .chore-row, .time-row, .photo-block { border-color:var(--line); }
+.hb-t { height:8px; border-radius:99px; background:var(--fill); } .hb-f { border-radius:99px; }
+.h-prog { border-radius:99px; background:var(--fill); } .h-prog span { border-radius:99px; }
+
+/* ---------- 9. Полиці, дні меню, «ярлики» комори ---------- */
+.lbl { border:0; border-radius:var(--r-lg); background:var(--panel); box-shadow:var(--shadow); padding:20px 12px 12px; }
+:root[data-theme="dark"] .lbl { box-shadow:0 0 0 1px var(--line); }
+.lbl::before { background:var(--fill); opacity:1; height:4px; width:28px; margin-left:-14px; }
+.lbl .lico { color:var(--gold); }
+.daycards { gap:12px; }
+.daycard { border:0; border-radius:var(--r-lg); background:var(--panel); box-shadow:var(--shadow); overflow:hidden; }
+:root[data-theme="dark"] .daycard { box-shadow:0 0 0 1px var(--line); }
+.daycard header { border-bottom:1px solid var(--line); }
+.daycard.today header { background:var(--fg); }
+.daycard .mrow { border-bottom:1px solid var(--line); }
+.dropzone { border:1.5px dashed color-mix(in srgb, var(--gold) 60%, transparent); border-radius:var(--r-xl); background:var(--fill-2); }
+.dropzone:hover, .dropzone.over { background:var(--gold-soft); transform:none; box-shadow:none; }
+.ring-bg { stroke:var(--fill); } .ring-fg { fill:none; stroke:var(--gold); } .ring-fg.over { stroke:var(--danger); }
+.bar { fill:var(--gold); opacity:1; } .bar.over { fill:var(--danger); }
+
+/* ---------- 10. Модальні вікна й тости ---------- */
+.modal-ov { background:rgba(0,0,0,.45); backdrop-filter:none; -webkit-backdrop-filter:none; animation:fadeIn .2s ease; }
+.modal { background:var(--panel); border-radius:var(--r-xl); padding:24px; box-shadow:0 30px 80px -20px rgba(0,0,0,.5);
+  animation:popIn .32s cubic-bezier(.2,.9,.3,1.1); }
+.toast { background:var(--panel); color:var(--fg); border:0; border-radius:999px; box-shadow:0 12px 40px -12px rgba(0,0,0,.45), 0 0 0 1px var(--line); padding:12px 22px; }
+.sheet-item { border-top:1px solid var(--line); font:500 17px var(--sans); }
+.quack { font:italic 500 26px var(--serif); text-shadow:none; color:var(--gold); }
+
+/* ---------- 11. Анімації: лише коротка поява ---------- */
+.reveal { animation:rise .4s cubic-bezier(.22,1,.36,1) backwards; animation-delay:calc(var(--i,0) * 40ms); }
+@keyframes rise { from { opacity:0; transform:translateY(10px); } }
+.auth-emblem { filter:none; animation:none; }
+.auth { max-width:440px; }
+.auth-emblem .rp, .auth-emblem .wave { animation:none; opacity:.4; }
+@media (prefers-reduced-motion:reduce) { .reveal { animation:none; } }
+
+/* ---------- 12. Телефон: скляний таб-бар, нижній лист ---------- */
+@media (max-width:700px) {
+  body::before { display:none; }   /* смугу під статус-баром прибрано: фон сторінки йде до самого верху */
+  header.top { padding:10px 16px; -webkit-backdrop-filter:none; backdrop-filter:none; background:var(--bg); border-bottom:0; flex-wrap:nowrap; }
+  /* без backdrop-filter на шапці, інакше fixed-таб-бар прилипає до неї, а не до екрана */
+  /* шапка в два рядки: угорі логотип, статус і режим, нижче на всю ширину вибір сімʼї */
+  header.top { flex-wrap:wrap; row-gap:8px; align-items:center; }
+  header.top .right { display:contents; }
+  header.top .brand { order:1; }
+  header.top .sync { order:2; flex:1 1 0; min-width:0; max-width:none; text-align:right; }
+  header.top #modeBtn { order:3; margin-right:0; flex:none; min-height:36px; padding:0 14px; }
+  header.top #themeBtn { order:3; flex:none; }
+  header.top #scopeSel { order:4; flex:1 1 100%; width:100%; max-width:none; min-height:40px; padding:8px 14px; font-size:15px; text-overflow:ellipsis; }
+  header.top #scopeSel[hidden] { display:none; }
+
+  main { padding:12px 16px 24px; }
+  h1 { font-size:34px; margin:4px 0 18px; }
+  .card { padding:18px 16px; border-radius:var(--r-lg); }
+  .stat { padding:14px 16px; } .stat-n { font-size:32px; }
+  #nav { background:var(--glass); -webkit-backdrop-filter:blur(30px) saturate(190%); backdrop-filter:blur(30px) saturate(190%);
+    border-top:1px solid var(--line); padding:6px 4px calc(6px + env(safe-area-inset-bottom)); gap:0; }
+  #nav button { border-radius:0; background:none; color:var(--mute); font:500 10.5px var(--sans); letter-spacing:.01em; padding:4px 2px; }
+  #nav button:hover { background:none; }
+  #nav button[aria-current="page"] { background:none; color:var(--gold); }
+  .modal { border-radius:var(--r-xl) var(--r-xl) 0 0; position:relative; padding-top:28px; }
+  .modal::before { content:""; position:absolute; top:8px; left:50%; width:36px; height:5px; margin-left:-18px; border-radius:3px; background:var(--fill); }
+  .fab { bottom:calc(84px + env(safe-area-inset-bottom)); }
+  button.primary, button.ghost { min-height:44px; }
+}
+@media (max-width:900px) { header.top { padding-inline:20px; } main { padding-inline:20px; } }
