@@ -6,3 +6,6 @@ local.properties
 
 .env.local
 node_modules/
+
+push-keys.txt
+ping-url.txt
