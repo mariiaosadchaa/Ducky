@@ -462,3 +462,20 @@ svg.i { width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:1.
 /* v10: друге вікно часу з'являється за кнопкою «додати ще» */
 .time-row > .link { justify-self:start; white-space:nowrap; }
 @media (max-width:600px) { .time-row > .link { grid-column:1 / -1; } }
+
+/* v11: довгий текст на телефоні не обрізається */
+.lbl { min-width:0; }
+.lbl > * { min-width:0; max-width:100%; }
+.lbl .nm, .lbl .k, .lbl .wt { overflow-wrap:anywhere; word-break:break-word; text-wrap:balance; }
+.lbl .k.st { flex-wrap:wrap; justify-content:center; text-align:center; }
+.lbl .acts { flex-wrap:wrap; }
+.card, .cards > *, .chore-main, .h-n, .shop-n, h1, h2, h3 { overflow-wrap:anywhere; }
+@media (max-width:600px) {
+  .shop-row { display:flex; flex-wrap:wrap; align-items:center; gap:2px 12px; position:relative; padding-left:36px; }
+  .shop-row > input[type=checkbox] { position:absolute; left:0; top:14px; margin:0; }
+  .shop-row .shop-n { flex:1 1 100%; min-width:0; overflow-wrap:anywhere; }
+  .shop-row .shop-p { min-width:0; text-align:left; }
+  .shop-row .shop-x { padding-left:0; }
+  .chore-row { grid-template-columns:minmax(0,1fr) auto; }
+  .chore-main { min-width:0; }
+}

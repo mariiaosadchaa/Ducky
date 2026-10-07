@@ -489,8 +489,8 @@ function viewPantry() {
     });
     save(); render();
   } },
-    field('Продукт', 'name', { required: true, list: 'dl-products', autocomplete: 'off', placeholder: 'Почніть вводити…' }), h('label', {}, 'Кількість', qtyInput({ name: 'qty' })), field('Вага / об\'єм', 'weight', { placeholder: '500 г' }),
-    field('Магазин', 'store', { list: 'dl-stores', autocomplete: 'off', placeholder: 'Оберіть або впишіть' }), field('Ціна, ₴', 'price', { type: 'number', min: '0', step: '0.01' }),
+    field('Продукт', 'name', { required: true, list: 'dl-products', autocomplete: 'off', placeholder: 'Назва…' }), h('label', {}, 'Кількість', qtyInput({ name: 'qty' })), field('Вага / об\'єм', 'weight', { placeholder: '500 г' }),
+    field('Магазин', 'store', { list: 'dl-stores', autocomplete: 'off', placeholder: 'Магазин…' }), field('Ціна, ₴', 'price', { type: 'number', min: '0', step: '0.01' }),
     field('Придатний до', 'exp', { type: 'date' }),
     h('button', { class: 'primary', type: 'submit' }, 'Додати'));
 

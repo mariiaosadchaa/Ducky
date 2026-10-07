@@ -1530,7 +1530,7 @@
     }
     function viewTasks() {
       const hm = HM(); const today = todayD();
-      const quick = h('input', { placeholder: 'Напр.: полити квіти щосереди 10 хв', enterkeyhint: 'done', autocomplete: 'off', 'aria-label': 'Нова задача' });
+      const quick = h('input', { placeholder: 'Напр.: полити квіти 10 хв', enterkeyhint: 'done', autocomplete: 'off', 'aria-label': 'Нова задача' });
       const addQuick = () => {
         const v = quick.value.trim(); if (!v) return; const q = parseQuick(v);
         hm.tasks.push({ id: uid(), title: q.title, due: q.due, minutes: q.minutes || 30, prio: q.prio, room: null, done: false, every: q.every, wd: q.wd, last: null });
@@ -1759,7 +1759,7 @@
     function quickAdd() {
       let closeFn = null;
       const home = isHomeMode();
-      const inp = h('input', { placeholder: home ? 'Напр.: полити квіти щосереди 10 хв' : 'Назва продукту', 'aria-label': 'Що додати', enterkeyhint: 'done', autocomplete: 'off', autocapitalize: 'sentences' });
+      const inp = h('input', { placeholder: home ? 'Напр.: полити квіти 10 хв' : 'Назва продукту', 'aria-label': 'Що додати', enterkeyhint: 'done', autocomplete: 'off', autocapitalize: 'sentences' });
       const done = (msg) => { closeFn(); save(); render(); X.toast(msg); };
       const val = () => inp.value.trim();
       const body = home
