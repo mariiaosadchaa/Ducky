@@ -1318,7 +1318,7 @@
       }
       const i = log.indexOf(item.key);
       if (on && i < 0) log.push(item.key); if (!on && i >= 0) log.splice(i, 1);
-      save(); render(); setTimeout(() => { pushSync(false); }, 300);
+      save(); render(); setTimeout(() => { pushSync(false); }, 300); if (on) praiseCheck();
     }
     function postpone(item) {
       const hm = HM(); const tomorrow = P.addDays(todayD(), 1);
@@ -1804,22 +1804,177 @@
     const PUSH_KEY = 'ducky.push';
     const pushSupported = () => typeof navigator !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window && typeof Notification !== 'undefined';
     let pushVapid = null; let pushSig = '';
-    const pushItems = () => {
-      const hm = HM(); const today = todayD(); const now = Date.now(); const out = [];
-      const at = (date, m) => { const [y, mo, d] = date.split('-').map(Number); return new Date(y, mo - 1, d, Math.floor(m / 60), m % 60).getTime(); };
-      const mineOnly = scope !== 'me' && meName();
-      const add = (date, it, snapItem) => {
-        if (mineOnly && it.who && lc(it.who) !== lc(meName())) return;
-        if (snapItem && isDoneNow(it)) return;
-        const t = at(date, it.startMin);
-        if (t < now - 10 * 60000) return;
-        out.push({ k: date + '|' + it.key, t: 'Дім · зараз', b: it.title + ' (' + mins(it.minutes) + ')', at: t });
-      };
-      if (hm.snap && hm.snap.date === today) for (const it of hm.snap.items) add(today, it, true);
-      const plan = P.planWeek(hm, today);
-      for (let k = 1; k < 3; k++) if (plan.days[k]) for (const it of plan.days[k].items) add(plan.days[k].date, it, false);
-      return out;
+    // ----- нагадування: кілька повідомлень на день замість «у час кожної справи» -----
+    // підстановки: {n} кількість справ, {список}, {хв} загальний час, {імʼя}, {партнер}, {разом}, {разом2}, {допоможеш}
+    const MORNING = [
+      'Кря, добрий ранок, {імʼя}! 🦆 Сьогодні {n}, разом {хв}. Поїхали!',
+      'Ранок у ставку ☀️ План на сьогодні: {список}',
+      'Доброго ранку! На сьогодні в нас {n}. Почни з найлегшої, і далі піде само.',
+      'Новий день, нова вода в ставку 🌊 У плані {n}, це {хв}.',
+      'Ранкова зарядка для качки: {список}',
+      'Привіт, {імʼя}! Сьогодні нічого зайвого, лише {n} на {хв}.',
+      'Кава є? Тоді поглянь, що на сьогодні: {список}',
+      'Сонце вже зійшло, час за справи ☀️ Сьогодні {n}.',
+      'Добрий ранок! Ось твій каченячий план на день: {список}',
+      'Ранок. Дихай. Сьогодні лише {n}{разом}. Усе під контролем.',
+      'Доброго ранку, {імʼя}! Маленькі кроки, і вдома чисто. Сьогодні: {список}',
+      'Крякнемо разом? 🦆 На сьогодні {n}, це {хв}.',
+      'Свіжий день, свіжий список: {список}',
+      'Ранкова розкладка: {n}, {хв} часу. Ти впораєшся!',
+    ];
+    const WEEKDAY_AM = {
+      0: ['Новий тиждень починається! Поглянь на розклад і задай головну ціль. Сьогодні {n}.', 'Понеділок, але ми ж качки: {n}, і все під контролем. 🦆'],
+      4: ['П\'ятниця! Закриємо останні справи, і вихідні вільні: {список}'],
+      5: ['Субота. Трохи справ, багато відпочинку: {список}', 'Вихідний! Сьогодні лише легкі справи: {список}'],
+      6: ['Вихідний! Сьогодні лише легкі справи: {список}', 'Недільне прибирання? Сьогодні {n}{разом2}.'],
     };
+    const COUPLE_AM = [
+      '{імʼя}, сьогодні в тебе {n}, а {партнер} теж має свою частину. Кожен свою!',
+      'Разом веселіше 🦆 Сьогодні вам удвох {всього}.',
+      'Розподіл готовий: у тебе {список}. Решту робить {партнер}.',
+    ];
+    const MIDDAY = [
+      'Кря! Як там справи зі справами? Лишилось: {список}',
+      'Обідня перерва закінчується 🦆 Ще {n} на сьогодні.',
+      'Невеличке нагадування: сьогодні ще чекає {список}',
+      'Півдня позаду. Виділи {хв}, і день закритий.',
+      'Качка пливе, а справи не чекають 😄 Лишилось {n}.',
+      'Є вільні 15 хвилин? Саме час для однієї зі справ: {список}',
+      'Тільки не відкладай на вечір 🙃 Ще {n}.',
+      'Хвилинка уваги: у списку лишилось {список}',
+    ];
+    const PARTNER_DONE = '{партнер} вже закрив(ла) свої справи. Твоя черга: {список}';
+    const EVENING = [
+      'Вечір у ставку 🌙 Лишилось {n}, це {хв}. Встигнеш!',
+      'Кря, ще трохи! Сьогодні не закрито: {список}',
+      'Остання перевірка дня: {список}',
+      'Ще {n} до спокійного вечора.',
+      'Вечір. Швидко пройдися по списку: {список}',
+      'Не залишай на завтра те, що займе {хв} 🦆',
+      'Вечірнє нагадування: чекає {n}.{допоможеш}',
+      'До кінця дня ще є час на: {список}',
+      'День добігає кінця. Закриємо останні {n}?',
+      'Ще хвилинка, і можна відпочивати. Лишилось: {список}',
+      'Качечко, не засинай без справ 😄 Залишилось {n}.',
+      'Фінішна пряма! {список}',
+    ];
+    const PRAISE = [
+      'Усе зроблено! 🎉 Можна пливти спокійно.',
+      'Кря-кря, ти молодець! Сьогодні всі справи закрито.',
+      'Ідеальний день: {n} із {n}. Заслужений відпочинок 🦆',
+      'Усе чисто! Серія днів росте.',
+      'Список порожній, а ставок спокійний 🌊',
+    ];
+    const REM_DEF = { morning: true, time: '09:00', midday: true, timeMid: '14:00', evening: true, timeEve: '20:00', praise: true, max: 3, quiet: [], skipEmpty: true, perItem: false };
+    const remKey = () => 'ducky.rem.' + (user ? user.id : '');
+    const rem = () => ({ ...REM_DEF, ...(store.get(remKey()) || {}) });
+    const remSave = (patch) => { store.set(remKey(), { ...rem(), ...patch }); pushSig = ''; pushSync(true); };
+    const TZ = (() => { for (const z of ['Europe/Kyiv', 'Europe/Kiev']) { try { new Intl.DateTimeFormat('en-US', { timeZone: z }); return z; } catch (e) { /* пробуємо наступну назву */ } } return 'UTC'; })();
+    const tzOffset = (ts) => {
+      const pr = new Intl.DateTimeFormat('en-US', { timeZone: TZ, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }).formatToParts(new Date(ts));
+      const g = (t) => Number(pr.find((x) => x.type === t).value);
+      return Date.UTC(g('year'), g('month') - 1, g('day'), g('hour'), g('minute'), g('second')) - Math.floor(ts / 1000) * 1000;
+    };
+    // момент «дата + хвилини від півночі» за київським часом
+    const kyivAt = (date, m) => {
+      const [y, mo, d] = date.split('-').map(Number); const base = Date.UTC(y, mo - 1, d, Math.floor(m / 60), m % 60);
+      let t = base; for (let i = 0; i < 2; i++) t = base - tzOffset(t); return t;
+    };
+    const hmToMin = (v, def) => { const m = /^(\d{1,2}):(\d{2})/.exec(String(v || '')); return m ? Number(m[1]) * 60 + Number(m[2]) : def; };
+    const dayNo = (date) => Math.floor(new Date(date + 'T12:00:00').getTime() / 86400000);
+    const partners = () => people().filter((x) => lc(x) !== lc(meName())).join(' та ');
+    const fillMsg = (tpl, items, ctx) => {
+      const total = items.reduce((s2, i) => s2 + (Number(i.minutes) || 0), 0); const names = items.map((i) => i.title);
+      const list = names.length > 4 ? names.slice(0, 4).join(', ') + ' і ще ' + (names.length - 4) : names.join(', ');
+      const pn = partners(); const all = (ctx && ctx.all) || items.length;
+      return tpl.replace(/\{список\}/g, list || 'нічого').replace(/\{n\}/g, cases(items.length, ['справа', 'справи', 'справ'])).replace(/\{всього\}/g, cases(all, ['справа', 'справи', 'справ'])).replace(/\{хв\}/g, mins(total))
+        .replace(/\{імʼя\}/g, (scope !== 'me' && meName()) || (user && user.name) || 'качечко').replace(/\{партнер\}/g, pn || 'партнер')
+        .replace(/\{разом\}/g, multi() ? ', і ви розподілили їх разом' : '').replace(/\{разом2\}/g, multi() ? ', а разом буде швидше' : '')
+        .replace(/\{допоможеш\}/g, multi() ? ' Допоможемо одне одному? 🤝' : '');
+    };
+    const isQuiet = (date, R) => (R.quiet || []).includes(P.wdOf(date));
+    const pushItems = () => {
+      const hm = HM(); const today = todayD(); const now = Date.now(); const R = rem(); const out = [];
+      const mineOnly = scope !== 'me' && meName();
+      const isMine = (it) => !(mineOnly && it.who && lc(it.who) !== lc(meName()));
+      const plan = P.planWeek(hm, today);
+      const perDay = {};
+      const take = (date) => { perDay[date] = (perDay[date] || 0) + 1; return perDay[date] <= Math.max(1, Number(R.max) || 1); };
+      plan.days.forEach((d, k) => {
+        if (isQuiet(d.date, R)) return;
+        const base = k === 0 && hm.snap && hm.snap.date === today ? hm.snap.items : d.items;
+        const others = base.filter((i) => !isMine(i));
+        const left = base.filter(isMine).filter((i) => k !== 0 || !isDoneNow(i));
+        const partnerDone = k === 0 && multi() && others.length > 0 && others.every(isDoneNow) && left.length > 0;
+        const wd = P.wdOf(d.date); const dn = dayNo(d.date);
+        // порядок важливий: за обмеженням «максимум на день» першими лишаються ранок і вечір
+        for (const [id, flag, tkey, def, off] of [['am', 'morning', 'time', 9 * 60, 0], ['pm', 'evening', 'timeEve', 20 * 60, 7], ['md', 'midday', 'timeMid', 14 * 60, 3]]) {
+          if (!R[flag]) continue;
+          if (!left.length && (id !== 'am' || R.skipEmpty)) continue;
+          const at = kyivAt(d.date, hmToMin(R[tkey], def)); if (at < now - 15 * 60000) continue;
+          let pool;
+          if (id === 'am') { const sp = WEEKDAY_AM[wd]; pool = sp ? sp.slice() : MORNING.slice(); if (multi() && !sp) pool.push(...COUPLE_AM); else if (multi() && sp) pool.push(COUPLE_AM[0]); }
+          else if (id === 'md') pool = partnerDone ? [PARTNER_DONE] : MIDDAY;
+          else pool = EVENING;
+          if (!take(d.date)) continue;
+          out.push({ k: id + '|' + d.date, t: 'Дім 🦆', b: fillMsg(pool[(dn + off) % pool.length], left, { all: base.length }), at });
+        }
+        if (R.perItem) {
+          const add = (it) => {
+            const at = kyivAt(d.date, it.startMin); if (at < now - 10 * 60000 || !take(d.date)) return;
+            out.push({ k: d.date + '|' + it.key, t: 'Дім · зараз', b: it.title + ' (' + mins(it.minutes) + ')', at });
+          };
+          left.forEach(add);
+        }
+      });
+      return out.filter((i) => i.at > 0);
+    };
+    // похвала, коли закрито все на сьогодні
+    function praiseCheck() {
+      try {
+        const R = rem(); const hm = HM(); const today = todayD();
+        if (!R.praise || !hm.snap || hm.snap.date !== today) return;
+        const mineOnly = scope !== 'me' && meName();
+        const items = hm.snap.items.filter((i) => !(mineOnly && i.who && lc(i.who) !== lc(meName())));
+        if (!items.length || !items.every(isDoneNow)) return;
+        const key = 'ducky.praise.' + (user ? user.id : '') + '.' + today; if (store.get(key)) return; store.set(key, 1);
+        const msg = fillMsg(PRAISE[dayNo(today) % PRAISE.length], items, { all: items.length });
+        X.toast(msg);
+        if (!isQuiet(today, R) && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+          const show = (reg) => { try { reg ? reg.showNotification('Дім 🦆', { body: msg, tag: 'praise-' + today }) : new Notification('Дім 🦆', { body: msg }); } catch (e) { /* не всюди підтримується */ } };
+          if ('serviceWorker' in navigator) navigator.serviceWorker.ready.then(show, () => show(null)); else show(null);
+        }
+      } catch (e) { /* похвала не критична */ }
+    }
+    // налаштування нагадувань для цього користувача
+    function remindCard() {
+      const R = rem(); const say = (t) => X.toast(t);
+      const row = 'display:flex;gap:10px;align-items:center;text-transform:none;letter-spacing:0;font-size:15px;margin-top:10px';
+      const chk = (label, val, key) => h('label', { class: 'check', style: row }, h('input', { type: 'checkbox', checked: val ? true : null, onchange: (e) => { remSave({ [key]: e.target.checked }); say('Збережено'); } }), label);
+      const tm = (key, def) => h('input', { type: 'time', value: R[key] || def, 'aria-label': 'Час', style: 'width:130px', onchange: (e) => { remSave({ [key]: e.target.value || def }); say('Збережено: ' + (e.target.value || def) + ' за Києвом'); } });
+      const slot = (label, flag, tkey, def) => h('div', { style: 'display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px' },
+        h('label', { class: 'check', style: 'display:flex;gap:10px;align-items:center;text-transform:none;letter-spacing:0;font-size:15px;min-width:150px' },
+          h('input', { type: 'checkbox', checked: R[flag] ? true : null, onchange: (e) => { remSave({ [flag]: e.target.checked }); say('Збережено'); } }), label), tm(tkey, def));
+      const max = h('select', { 'aria-label': 'Максимум повідомлень на день', style: 'width:90px', onchange: (e) => { remSave({ max: Number(e.target.value) }); say('Максимум на день: ' + e.target.value); } },
+        [1, 2, 3, 4, 5, 6, 8, 10].map((n) => h('option', { value: n, selected: Number(R.max) === n ? true : null }, String(n))));
+      const days = h('div', { class: 'toolbar', style: 'margin-top:8px;flex-wrap:wrap' }, ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Нд'].map((d, i) => {
+        const on = (R.quiet || []).includes(i);
+        return h('button', { class: on ? 'primary' : 'ghost', type: 'button', 'aria-pressed': on ? 'true' : 'false', onclick: () => {
+          const q = new Set(rem().quiet || []); q.has(i) ? q.delete(i) : q.add(i); remSave({ quiet: [...q].sort() }); render();
+        } }, d);
+      }));
+      return h('div', { class: 'card', style: 'margin-top:20px' }, h('div', { class: 'tag' }, 'Що й коли нагадувати'),
+        slot('Ранок: список на день', 'morning', 'time', '09:00'),
+        slot('День: чи все гаразд', 'midday', 'timeMid', '14:00'),
+        slot('Вечір: що лишилось', 'evening', 'timeEve', '20:00'),
+        h('p', { class: 'note', style: 'margin:6px 0 0' }, 'Час за київським часом.'),
+        chk('Хвалити, коли всі справи на день зроблено', R.praise, 'praise'),
+        chk('Не писати зранку, якщо справ на день немає', R.skipEmpty, 'skipEmpty'),
+        chk('Додатково нагадувати у час кожної справи', R.perItem, 'perItem'),
+        h('div', { class: 'toolbar', style: 'margin-top:12px;align-items:center' }, h('span', { class: 'mute' }, 'Максимум повідомлень на день:'), max),
+        h('div', { class: 'mute', style: 'margin-top:14px' }, 'Дні тиші: у позначені дні повідомлень не буде'), days,
+        h('p', { class: 'note', style: 'margin:10px 0 0' }, 'Опівдні й увечері пишемо лише коли ще є незроблені справи. Ці налаштування лише для тебе, кожен учасник ставить свої. Щоб повідомлення приходили, коли застосунок закритий, увімкни «Сповіщення на телефоні» вище.'));
+    }
     async function pushSub(create) {
       const reg = await navigator.serviceWorker.ready;
       let sub = await reg.pushManager.getSubscription();
@@ -1970,7 +2125,7 @@
         h('div', { class: 'card', style: 'margin-top:20px' }, h('div', { class: 'tag' }, 'Нагадування'),
           h('label', { class: 'check', style: 'display:flex;gap:10px;align-items:center;text-transform:none;letter-spacing:0;font-size:15px;margin-top:8px' }, notifyBox, 'Нагадувати, коли настав час справи зі списку на сьогодні'),
           h('p', { class: 'note', style: 'margin:8px 0 0' }, 'Працює, поки застосунок відкритий. Щоб нагадувало й коли він закритий, увімкни сповіщення на телефоні нижче.')),
-        pushCard(), note];
+        pushCard(), remindCard(), note];
     }
 
     // нагадування: раз на пів хвилини дивимось, чи не час для справи
