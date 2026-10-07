@@ -73,7 +73,12 @@ async function loadMemberships() {
     const ids = [...new Set(mem.data.map((m) => m.household_id))];
     const hh = await sb.from('households').select('id, name').in('id', ids);
     const names = new Map((hh.data || []).map((x) => [x.id, x.name]));
-    memberships = ids.map((id) => ({ id, name: names.get(id) || 'Сім\'я' }));
+    let counts = new Map();
+    try { const all = await sb.from('household_members').select('household_id, user_id').in('household_id', ids); (all.data || []).forEach((r) => counts.set(r.household_id, (counts.get(r.household_id) || 0) + 1)); } catch (e) { counts = new Map(); }
+    memberships = ids.map((id) => ({ id, name: names.get(id) || 'Сім\'я', n: counts.get(id) || 0 }));
+    // однакові назви: додаємо кількість учасників і короткий код, щоб відрізнити
+    const dup = new Map(); memberships.forEach((m) => dup.set(m.name, (dup.get(m.name) || 0) + 1));
+    memberships.forEach((m) => { if (dup.get(m.name) > 1) m.name += ' · ' + (m.n ? m.n + ' учасн. · ' : '') + '#' + String(m.id).slice(0, 4); });
   } catch (e) { memberships = []; }
 }
 // завантажує дані поточного scope; true, якщо вдалося
