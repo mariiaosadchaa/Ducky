@@ -503,3 +503,28 @@ svg.i { width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:1.
   header.top .right .ghost { height:38px; padding:0 16px; display:inline-flex; align-items:center; white-space:nowrap; }
   header.top .right select.scope { width:auto; min-width:190px; max-width:300px; height:38px; padding:0 12px; font-size:13px; text-overflow:ellipsis; }
 }
+
+/* власний список вибору коморі/сімʼї */
+.scope-native { position:absolute !important; width:1px; height:1px; opacity:0; pointer-events:none; overflow:hidden; }
+.dd { position:relative; display:inline-block; min-width:0; }
+.dd-btn { width:100%; display:flex; align-items:center; justify-content:space-between; gap:10px; text-align:left; background:var(--card); color:var(--fg); border:1px solid var(--line);
+  border-radius:10px; padding:0 12px; height:38px; font:400 13px var(--sans); cursor:pointer; transition:border-color .25s, box-shadow .25s; }
+.dd-btn:hover, .dd.open .dd-btn { border-color:var(--gold); }
+.dd.open .dd-btn { box-shadow:0 0 0 4px var(--spot); }
+.dd-label { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.dd-chev { width:8px; height:8px; flex:none; border-right:1.5px solid var(--gold); border-bottom:1.5px solid var(--gold); transform:rotate(45deg) translateY(-2px); transition:transform .25s var(--ease); }
+.dd.open .dd-chev { transform:rotate(-135deg) translate(-2px,-1px); }
+.dd-list { position:absolute; z-index:80; top:calc(100% + 8px); left:0; min-width:100%; width:max-content; max-width:min(340px, 92vw); margin:0; padding:6px; list-style:none;
+  background:var(--card); border:1px solid var(--line); border-radius:14px; box-shadow:0 24px 60px -18px rgba(0,0,0,.55), 0 0 0 1px var(--spot);
+  opacity:0; visibility:hidden; transform:translateY(-6px) scale(.98); transform-origin:top left; transition:opacity .2s, transform .25s var(--ease), visibility 0s .25s; }
+.dd.open .dd-list { opacity:1; visibility:visible; transform:none; transition-delay:0s; }
+.dd-item { width:100%; display:flex; align-items:center; gap:10px; padding:10px 12px; border:0; border-radius:9px; background:none; color:var(--fg); font:400 14px var(--sans); text-align:left; cursor:pointer; letter-spacing:0; text-transform:none; transition:background .2s, color .2s; }
+.dd-item:hover, .dd-item:focus-visible { background:var(--spot); outline:none; }
+.dd-item.on { color:var(--gold); }
+.dd-ic { font-size:16px; flex:none; }
+.dd-t { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.dd-ck { width:6px; height:11px; flex:none; border-right:2px solid var(--gold); border-bottom:2px solid var(--gold); transform:rotate(45deg) translate(-1px,-2px); opacity:0; }
+.dd-item.on .dd-ck { opacity:1; }
+.dd[hidden] { display:none !important; }
+@media (max-width:700px) { header.top #scopeDd { order:4; flex:1 1 100%; width:100%; } .dd-btn { height:44px; font-size:15px; padding:0 14px; } .dd-list { max-width:calc(100vw - 32px); } .dd-item { padding:13px 12px; font-size:16px; } }
+@media (min-width:701px) { header.top .right .dd { min-width:200px; max-width:320px; } }

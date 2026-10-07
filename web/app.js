@@ -876,9 +876,40 @@ const $logout = document.getElementById('logoutBtn');
 const $sync = document.getElementById('sync');
 const $scope = document.getElementById('scopeSel');
 let scopeSig = '';
+// власний випадаючий список замість стандартного: нативний select лишається прихованим для логіки
+const $scopeDd = h('div', { id: 'scopeDd', class: 'dd', hidden: true });
+$scope.classList.add('scope-native'); $scope.tabIndex = -1; $scope.after($scopeDd);
+let ddOpen = false;
+function ddClose() { ddOpen = false; $scopeDd.classList.remove('open'); const b = $scopeDd.querySelector('.dd-btn'); if (b) b.setAttribute('aria-expanded', 'false'); }
+function ddPick(v) { ddClose(); if (v === $scope.value) return; $scope.value = v; $scope.dispatchEvent(new Event('change')); }
+function ddBuild() {
+  const opts = [...$scope.options];
+  const cur = opts.find((o) => o.value === $scope.value) || opts[0];
+  const btn = h('button', { class: 'dd-btn', type: 'button', 'aria-haspopup': 'listbox', 'aria-expanded': ddOpen ? 'true' : 'false', title: cur ? cur.textContent : '',
+    onclick: (e) => { e.stopPropagation(); ddOpen = !ddOpen; $scopeDd.classList.toggle('open', ddOpen); btn.setAttribute('aria-expanded', String(ddOpen)); },
+    onkeydown: (e) => {
+      if (e.key === 'Escape') { ddClose(); return; }
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault(); if (!ddOpen) { btn.click(); return; }
+        const items = [...$scopeDd.querySelectorAll('.dd-item')]; const i = items.indexOf(document.activeElement);
+        (items[(i + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length] || items[0]).focus();
+      } } },
+    h('span', { class: 'dd-label' }, cur ? cur.textContent : ''), h('span', { class: 'dd-chev', 'aria-hidden': 'true' }));
+  const list = h('ul', { class: 'dd-list', role: 'listbox' }, opts.map((o) => h('li', { role: 'none' },
+    h('button', { class: 'dd-item' + (o.value === $scope.value ? ' on' : ''), type: 'button', role: 'option', 'aria-selected': o.value === $scope.value ? 'true' : 'false',
+      onclick: () => ddPick(o.value),
+      onkeydown: (e) => {
+        const items = [...$scopeDd.querySelectorAll('.dd-item')]; const i = items.indexOf(e.currentTarget);
+        if (e.key === 'ArrowDown') { e.preventDefault(); items[(i + 1) % items.length].focus(); }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); items[(i + items.length - 1) % items.length].focus(); }
+        else if (e.key === 'Escape') { ddClose(); btn.focus(); } } },
+      h('span', { class: 'dd-ic', 'aria-hidden': 'true' }, o.value === 'me' ? '🦆' : '🏡'), h('span', { class: 'dd-t' }, o.textContent), h('span', { class: 'dd-ck', 'aria-hidden': 'true' }))))); 
+  $scopeDd.replaceChildren(btn, list);
+}
+document.addEventListener('click', (e) => { if (ddOpen && !$scopeDd.contains(e.target)) ddClose(); });
 function drawScope() {
   const show = !!(user && remote && memberships.length);
-  $scope.hidden = !show;
+  $scope.hidden = true; $scopeDd.hidden = !show;
   if (!show) { scopeSig = ''; return; }
   const sig = scope + '|' + memberships.map((m) => m.id + m.name).join(',');
   if (sig === scopeSig) return;
@@ -886,6 +917,7 @@ function drawScope() {
   $scope.replaceChildren(h('option', { value: 'me' }, 'Моя комора'),
     ...memberships.map((m) => h('option', { value: m.id }, 'Сім\'я: ' + m.name)));
   $scope.value = scope;
+  ddBuild();
 }
 $scope.addEventListener('change', () => { if (user && $scope.value === 'me' && store.get('ducky.mode') === 'home') store.set('ducky.hme.' + user.id, '1'); else if (user) store.set('ducky.hme.' + user.id, ''); switchScope($scope.value); });
 $theme.addEventListener('click', () => {
