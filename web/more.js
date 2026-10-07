@@ -1040,6 +1040,102 @@
   })(typeof window !== 'undefined' ? window : globalThis);
 
   // ---------- ДІМ: прибирання, задачі й розклад на день ----------
+  // ----- Спільний «Дім»: злиття змін двох людей, кожну справу окремо -----
+  // Кожна кімната, справа й задача має мітку часу зміни (mt). Видалення пам'ятається (del), позначки «зроблено» ведуться по кожній парі день+справа (lg).
+  (function homeMerge(root) {
+    const COLS = ['rooms', 'chores', 'tasks'];
+    const hashOf = (x) => { const c = {}; for (const k of Object.keys(x)) if (k !== 'mt' && k !== 'mh') c[k] = x[k]; const t = JSON.stringify(c); let n = 5381; for (let i = 0; i < t.length; i++) n = ((n * 33) ^ t.charCodeAt(i)) >>> 0; return n.toString(36) + t.length; };
+    const settingsOf = (hm) => JSON.stringify([hm.hours || [], hm.fill !== false]);
+    function stamp(hm, now) {
+      if (!hm || typeof hm !== 'object') return;
+      if (!hm.del || typeof hm.del !== 'object') hm.del = {};
+      const cur = {};
+      for (const c of COLS) {
+        cur[c] = [];
+        for (const x of (Array.isArray(hm[c]) ? hm[c] : [])) {
+          if (!x || !x.id) continue;
+          cur[c].push(x.id);
+          const hh = hashOf(x); if (x.mh !== hh) { x.mt = now; x.mh = hh; }
+        }
+        if (hm.known && Array.isArray(hm.known[c])) for (const id of hm.known[c]) if (!cur[c].includes(id) && !hm.del[id]) hm.del[id] = now;
+      }
+      hm.known = cur;
+      const sg = settingsOf(hm); if (hm.sh !== sg) { hm.sh = sg; hm.smt = now; }
+      // «зроблено»: кожна пара день+справа це окремий запис [1|0, час]
+      if (!hm.lg || typeof hm.lg !== 'object') hm.lg = {};
+      const log = hm.log && typeof hm.log === 'object' ? hm.log : {};
+      for (const d of Object.keys(log)) for (const k of log[d]) { const r = hm.lg[d + '|' + k]; if (!r || r[0] !== 1) hm.lg[d + '|' + k] = [1, now]; }
+      for (const key of Object.keys(hm.lg)) {
+        const r = hm.lg[key]; const i = key.indexOf('|'); const d = key.slice(0, i); const k = key.slice(i + 1);
+        if (r[0] === 1 && !(log[d] || []).includes(k)) hm.lg[key] = [0, now];
+        if (r[1] < now - 30 * 864e5) delete hm.lg[key];
+      }
+      for (const id of Object.keys(hm.del)) if (hm.del[id] < now - 30 * 864e5) delete hm.del[id];
+    }
+    function merge(L, R, now) {
+      if (!R || typeof R !== 'object') return L;
+      if (!L || typeof L !== 'object') return R;
+      now = now || Date.now();
+      stamp(L, now);
+      const out = { ...R, ...L };
+      const del = { ...(R.del || {}) }; for (const id of Object.keys(L.del || {})) del[id] = Math.max(del[id] || 0, L.del[id]);
+      out.del = del;
+      for (const c of COLS) {
+        const m = new Map();
+        for (const x of (Array.isArray(R[c]) ? R[c] : [])) if (x && x.id) m.set(x.id, x);
+        for (const x of (Array.isArray(L[c]) ? L[c] : [])) { if (!x || !x.id) continue; const o = m.get(x.id); if (!o || (x.mt || 0) >= (o.mt || 0)) m.set(x.id, x); }
+        out[c] = [...m.values()].filter((x) => !(del[x.id] && del[x.id] >= (x.mt || 0)));
+      }
+      if ((R.smt || 0) > (L.smt || 0)) { out.hours = R.hours; out.fill = R.fill; out.sh = R.sh; out.smt = R.smt; }
+      const lg = { ...(R.lg || {}) };
+      for (const key of Object.keys(L.lg || {})) { const a = L.lg[key]; const b = lg[key]; if (!b || a[1] >= b[1]) lg[key] = a; }
+      out.lg = lg;
+      const log = {};
+      for (const key of Object.keys(lg)) if (lg[key][0] === 1) { const i = key.indexOf('|'); (log[key.slice(0, i)] || (log[key.slice(0, i)] = [])).push(key.slice(i + 1)); }
+      out.log = log;
+      out.hist = { ...(R.hist || {}), ...(L.hist || {}) };
+      stamp(out, now);
+      return out;
+    }
+    root.DuckyMerge = { stamp, merge };
+  })(typeof window !== 'undefined' ? window : globalThis);
+
+  // підключення до збереження: мітки часу при кожному save, злиття перед відправкою у спільну базу
+  (function homeSync() {
+    if (typeof window === 'undefined') return;
+    const M = window.DuckyMerge;
+    const baseSave = save;
+    save = function () { try { if (state && state.home) M.stamp(state.home, Date.now()); } catch (e) { /* не заважаємо збереженню */ } return baseSave.apply(this, arguments); };
+    const basePush = pushRemote;
+    pushRemote = async function () {
+      if (scope === 'me' || !remote || !user || !remoteReady) return basePush();
+      const T = 'ducky_household_data'; const hid = scope;
+      for (let attempt = 0; attempt < 4; attempt++) {
+        if (scope !== hid) return;
+        const cur = await sb.from(T).select('data, updated_at').eq('household_id', hid).maybeSingle();
+        if (cur.error) { setSync('Не вдалося зберегти', true); return; }
+        let changed = false;
+        if (cur.data && cur.data.data && cur.data.data.home) {
+          const before = JSON.stringify(state.home);
+          state.home = M.merge(state.home, cur.data.data.home, Date.now());
+          changed = before !== JSON.stringify(state.home);
+          saveLocal();
+        }
+        const at = new Date().toISOString();
+        const res = cur.data
+          ? await sb.from(T).update({ data: state, updated_at: at, updated_by: user.id }).eq('household_id', hid).eq('updated_at', cur.data.updated_at).select('household_id')
+          : await sb.from(T).upsert({ household_id: hid, data: state, updated_at: at, updated_by: user.id });
+        if (res.error) { setSync('Не вдалося зберегти', true); return; }
+        if (!cur.data || (res.data && res.data.length)) {
+          setSync('Збережено');
+          if (changed) { const a = document.activeElement; if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) pendingRemote = true; else render(); }
+          return;
+        }
+      }
+      setSync('Не вдалося зберегти: хтось змінює одночасно. Спробуй ще раз.', true);
+    };
+  })();
+
   (function homeMode() {
     const P = window.DuckyPlan;
     const MODE_KEY = 'ducky.mode';
@@ -1084,7 +1180,8 @@
         const same = hm.snap && hm.snap.date === today;
         const doneKeys = same ? (hm.log[today] || []) : [];
         const keep = same ? hm.snap.items.filter((i) => doneKeys.includes(i.key)) : [];
-        const plan = P.planWeek(hm, today).days[0];
+        // коли щось уже зроблено, вільний час не добираємо справами з наступних днів, щоб на місце зробленої не зʼявлялась нова
+        const plan = P.planWeek(keep.length ? { ...hm, fill: false } : hm, today).days[0];
         const fresh = plan.items.filter((i) => !keep.some((k) => k.key === i.key)).map(slim);
         const items = keep.concat(fresh);
         hm.snap = { date: today, sig, items, cap: plan.cap };
@@ -1176,6 +1273,24 @@
       return h('div', { class: 'card', style: 'margin-top:20px' }, h('div', { class: 'tag' }, 'Є вільний час?'),
         h('div', { class: 'toolbar', style: 'margin-top:8px;align-items:center' }, inp, h('span', { class: 'mute' }, 'хв'), h('button', { class: 'ghost', type: 'button', onclick: go }, 'Підібрати справу')), out);
     }
+    // «Можу ще»: коли все зроблено, беремо на сьогодні справи з найближчих днів
+    function moreCard(plan, snap) {
+      const out = h('p', { class: 'note', role: 'status', style: 'margin:8px 0 0' });
+      const pool = []; const seen = new Set(snap.items.map((i) => i.key));
+      for (let k = 1; k < 5; k++) if (plan.days[k]) for (const i of plan.days[k].items) if (!seen.has(i.key) && !/#/.test(i.key)) { seen.add(i.key); pool.push({ ...i, when: plan.days[k].date }); }
+      pool.sort((a, b) => (isMustItem(b) - isMustItem(a)) || (a.when < b.when ? -1 : a.when > b.when ? 1 : 0));
+      const take = (n) => {
+        let sum = 0; const got = [];
+        for (const i of pool) { if (got.length && sum + i.minutes > n) continue; got.push(i); sum += i.minutes; if (sum >= n) break; }
+        if (!got.length) { out.textContent = 'Більше нічого не заплановано на найближчі дні. Додай справу в «Задачі» або «Прибирання».'; return; }
+        const hm = HM();
+        for (const i of got) { const x = i.type === 'chore' ? hm.chores.find((c) => c.id === i.id) : hm.tasks.find((t) => t.id === i.id); if (x) { x.pin = todayD(); delete x.snooze; } }
+        save(); render(); X.toast('Додано на сьогодні: ' + got.map((g) => g.title).join(', '));
+      };
+      return h('div', { class: 'card', style: 'margin-top:16px' }, h('div', { class: 'tag' }, 'Можу ще'),
+        h('p', { class: 'mute', style: 'margin:6px 0 10px' }, pool.length ? 'Усе на сьогодні зроблено. Є сили на більше? Візьму справи з найближчих днів.' : 'Усе на сьогодні зроблено, а в найближчі дні нічого не заплановано. Гарного відпочинку.'),
+        pool.length ? h('div', { class: 'toolbar' }, [15, 30, 60].map((n) => h('button', { class: 'ghost', type: 'button', onclick: () => take(n) }, n === 60 ? 'Ще годину' : 'Ще ' + n + ' хв'))) : null, out);
+    }
     function viewToday() {
       const hm = HM(); const today = todayD(); const snap = todaySnap();
       const plan = P.planWeek(hm, today);
@@ -1216,6 +1331,7 @@
         h('div', { class: 'toolbar', style: 'margin-top:16px' },
           h('button', { class: low ? 'primary' : 'ghost', type: 'button', onclick: () => { hm.low = low ? null : today; save(); render(); } }, low ? 'Показати все' : 'Мало сил'),
           h('button', { class: 'ghost', type: 'button', onclick: () => { hm.snap = null; save(); render(); X.toast('Розклад на сьогодні перераховано'); } }, 'Перепланувати')),
+        snap.items.length && open0.length === 0 ? moreCard(plan, snap) : null,
         freeTimeCard(snap, plan),
         h('p', { class: 'note' }, 'Кнопка «перенести» ставить справу на інший день. Обовʼязкові справи не відкладаються автоматично. Серія рахується за днями, коли ти відкривала застосунок і закрила все обовʼязкове.')];
     }
@@ -1457,7 +1573,9 @@
     const pushItems = () => {
       const hm = HM(); const today = todayD(); const now = Date.now(); const out = [];
       const at = (date, m) => { const [y, mo, d] = date.split('-').map(Number); return new Date(y, mo - 1, d, Math.floor(m / 60), m % 60).getTime(); };
+      const mineOnly = scope !== 'me' && user && user.name;
       const add = (date, it, snapItem) => {
+        if (mineOnly && it.who && String(it.who).trim().toLowerCase() !== String(user.name).trim().toLowerCase()) return;
         if (snapItem && isDoneNow(it)) return;
         const t = at(date, it.startMin);
         if (t < now - 10 * 60000) return;
@@ -1540,8 +1658,11 @@
           save(); note.textContent = 'Збережено: ' + (off.checked ? 'вихідний' : mins(P.hoursOf(hm)[i].min)) + ' · ' + WD[i];
         };
         for (const el of [off, a1, b1, a2, b2]) el.addEventListener('change', upd);
+        const win2 = h('span', { class: 'time-w' }, a2, ' – ', b2);
+        const addBtn = h('button', { class: 'link', type: 'button', onclick: () => { addBtn.replaceWith(win2); a2.focus(); } }, '+ додати ще');
+        const second = w[1] ? win2 : addBtn;
         return h('div', { class: 'time-row' }, h('span', {}, WD[i]), h('label', { class: 'time-off' }, off, ' вихідний'),
-          h('span', { class: 'time-w' }, a1, ' – ', b1), h('span', { class: 'time-w' }, a2, ' – ', b2));
+          h('span', { class: 'time-w' }, a1, ' – ', b1), second);
       });
       const notifyBox = h('input', { type: 'checkbox', checked: hm.notify ? true : null, onchange: async (e) => {
         if (e.target.checked) {

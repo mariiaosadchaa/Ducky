@@ -458,3 +458,7 @@ svg.i { width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:1.
   .chore-row button { min-height:44px; }
   input, select, textarea { font-size:16px; }
 }
+
+/* v10: друге вікно часу з'являється за кнопкою «додати ще» */
+.time-row > .link { justify-self:start; white-space:nowrap; }
+@media (max-width:600px) { .time-row > .link { grid-column:1 / -1; } }

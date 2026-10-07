@@ -83,7 +83,11 @@ async function loadScopeData() {
     : await sb.from('ducky_household_data').select('data').eq('household_id', scope).maybeSingle();
   if (error) return false;
   remoteReady = true;
-  if (data && data.data && typeof data.data === 'object') { state = { ...defaults(), ...data.data }; setSync('Синхронізовано'); }
+  if (data && data.data && typeof data.data === 'object') {
+    const mine = state && state.home; const inc = data.data.home;
+    state = { ...defaults(), ...data.data }; setSync('Синхронізовано');
+    if (mine && inc && window.DuckyMerge) { const before = JSON.stringify(inc); state.home = window.DuckyMerge.merge(mine, inc, Date.now()); if (before !== JSON.stringify(state.home)) { saveLocal(); setTimeout(save, 0); } }
+  }
   else await pushRemote();              // першe використання: завантажуємо локальний кеш у базу
   return true;
 }
@@ -100,8 +104,11 @@ function subscribeRealtime() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'ducky_household_data', filter: 'household_id=eq.' + hid }, (p) => {
         const row = p && p.new;
         if (!row || !row.data || scope !== hid || row.updated_by === user.id) return;
+        const mine = state.home; const inc = row.data.home;
         state = { ...defaults(), ...row.data, tab: state.tab };
-        saveLocal(); setSync('Оновлено іншим учасником');
+        let back = false;   // є мої несинхронізовані зміни: зливаємо й відправляємо назад
+        if (mine && window.DuckyMerge) { const before = JSON.stringify(inc); state.home = window.DuckyMerge.merge(mine, inc, Date.now()); back = before !== JSON.stringify(state.home); }
+        saveLocal(); setSync('Оновлено іншим учасником'); if (back) save();
         const a = document.activeElement;
         if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) pendingRemote = true; else render();
       })
