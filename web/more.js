@@ -1337,6 +1337,19 @@
     }
 
     // ----- Розклад на тиждень (справи можна перетягувати між днями) -----
+    // «Не вмістилось у графік»: коротко, з групуванням однакових справ
+    function unplacedCard(list) {
+      if (!list.length) return null;
+      const groups = new Map();
+      for (const u of list) { const g = groups.get(u.title) || { title: u.title, n: 0, min: 0, must: false }; g.n++; g.min += Number(u.minutes) || 0; g.must = g.must || !!(u.must || u.overdue); groups.set(u.title, g); }
+      const rows = [...groups.values()].sort((a, b) => (b.must - a.must) || b.min - a.min);
+      const total = rows.reduce((s, g) => s + g.min, 0);
+      return h('details', { class: 'card unplaced', style: 'margin-top:16px' },
+        h('summary', {}, 'Не вмістилось у графік: ' + cases(list.length, ['справа', 'справи', 'справ']) + (total ? ' · ' + mins(total) : '')),
+        h('p', { class: 'mute', style: 'margin:8px 0' }, 'Ці справи чекають, поки зʼявиться вільний час. Збільш вікна в «Мій час» або зніми частину справ.'),
+        h('ul', { class: 'h-list' }, rows.map((g) => h('li', {}, h('span', { class: 'h-n' }, g.title, g.must ? h('span', { class: 'gold-t' }, ' ★') : null), h('span', { class: 'mute' }, (g.n > 1 ? '×' + g.n + ' · ' : '') + mins(g.min))))),
+        h('button', { class: 'link', type: 'button', onclick: () => { const b = [...document.querySelectorAll('nav button')].find((x) => /Мій час/.test(x.textContent)); if (b) b.click(); } }, 'Відкрити «Мій час»'));
+    }
     function viewWeek() {
       const hm = HM(); const today = todayD(); const snap = todaySnap();
       const plan = P.planWeek(hm, today);
@@ -1362,7 +1375,7 @@
         })),
         h('div', { class: 'toolbar', style: 'margin-top:16px' }, h('button', { class: 'ghost', type: 'button', onclick: () => { saveFile('rozklad-dim.ics', window.DuckyICS(days, roomName), 'text/calendar'); X.toast('Відкрий файл на айфоні й обери «Додати в Календар»'); } }, 'Додати розклад у Календар')),
         plan.waiting && plan.waiting.length ? h('p', { class: 'note' }, 'Чекають на попередню справу: ' + plan.waiting.map((w) => w.title + ' (після «' + afterLabel(w.after) + '»)').join('; ') + '.') : null,
-        plan.unplaced.length ? h('p', { class: 'note warn' }, 'Не вмістилось у графік: ' + plan.unplaced.map((u) => u.title).join(', ') + '. Збільш час у «Мій час» або зніми частину справ.') : null,
+        unplacedCard(plan.unplaced),
         h('p', { class: 'note' }, '★ означає обовʼязкову справу. Перетягни справу на інший день або натисни ⇄. Розклад перераховується сам, коли ти відмічаєш зроблене або змінюєш справи.')];
     }
 
@@ -1528,6 +1541,38 @@
             hm.tasks = hm.tasks.filter((x) => x.id !== t.id); save(); closeFn(); render();
           } }, 'Видалити') : null), msg));
     }
+    // у сімейній коморі: узяти вибрані справи зі своєї особистої комори
+    function shareFromMine() {
+      if (typeof scope === 'undefined' || scope === 'me' || !user) return null;
+      const mine = (loadState(user.id).home) || {};
+      const roomOf = (id) => ((mine.rooms || []).find((r) => r.id === id) || {}).name || '';
+      const hm = HM();
+      const key = (kind, title, room) => kind + '|' + String(title || '').trim().toLowerCase() + '|' + String(room || '').trim().toLowerCase();
+      const have = new Set([...hm.chores.map((c) => key('c', c.title, c.room ? roomName(c.room) : '')), ...hm.tasks.map((t) => key('t', t.title, t.room ? roomName(t.room) : ''))]);
+      const cand = [...(mine.chores || []).map((x) => ['c', x]), ...(mine.tasks || []).filter((t) => !t.done).map((x) => ['t', x])]
+        .filter(([k, x]) => x && x.title && !have.has(key(k, x.title, x.room ? roomOf(x.room) : '')));
+      if (!cand.length) return h('div', { class: 'card', style: 'margin-top:20px' }, h('div', { class: 'tag' }, 'Зі своєї комори'), h('p', { class: 'mute', style: 'margin:6px 0 0' }, 'У «Моїй коморі» немає справ, яких тут ще нема.'));
+      const boxes = cand.map(([k, x]) => h('input', { type: 'checkbox' }));
+      const go = () => {
+        const picked = cand.filter((c, i) => boxes[i].checked); if (!picked.length) { X.toast('Познач, що скопіювати'); return; }
+        const roomId = (id) => {
+          const nm = roomOf(id); if (!nm) return null;
+          let r = hm.rooms.find((x) => x.name.trim().toLowerCase() === nm.trim().toLowerCase());
+          if (!r) { r = { id: uid(), name: nm }; hm.rooms.push(r); }
+          return r.id;
+        };
+        for (const [k, x] of picked) {
+          const c = { ...x, id: uid(), room: x.room ? roomId(x.room) : null, after: null }; delete c.mt; delete c.mh; delete c.pin; delete c.snooze;
+          (k === 'c' ? hm.chores : hm.tasks).push(c);
+        }
+        save(); render(); X.toast('Скопійовано: ' + picked.length);
+      };
+      return h('div', { class: 'card', style: 'margin-top:20px' }, h('div', { class: 'tag' }, 'Зі своєї комори'),
+        h('p', { class: 'mute', style: 'margin:6px 0 10px' }, 'Познач справи зі «Своєї комори», які хочеш зробити спільними. Вони скопіюються сюди, а твої особисті лишаться.'),
+        cand.map(([k, x], i) => h('label', { class: 'check', style: 'display:flex;gap:10px;align-items:center;text-transform:none;letter-spacing:0;font-size:15px;padding:6px 0' }, boxes[i],
+          h('span', {}, x.title, h('span', { class: 'mute' }, ' · ' + (k === 'c' ? 'прибирання' : 'задача') + (x.room && roomOf(x.room) ? ' · ' + roomOf(x.room) : ''))))),
+        h('div', { class: 'toolbar', style: 'margin-top:10px' }, h('button', { class: 'primary', type: 'button', onclick: go }, 'Скопіювати вибране')));
+    }
     function viewTasks() {
       const hm = HM(); const today = todayD();
       const quick = h('input', { placeholder: 'Напр.: полити квіти 10 хв', enterkeyhint: 'done', autocomplete: 'off', 'aria-label': 'Нова задача' });
@@ -1563,6 +1608,7 @@
         open.length ? h('div', { class: 'card' }, h('div', { class: 'tag' }, 'Разові'), open.flatMap((t) => [row(t), subList(t)])) : rep.length ? null : h('p', { class: 'empty' }, 'Задач немає. Додай першу: дедлайн і тривалість необовʼязкові, розклад сам знайде час.'),
         done.length ? h('details', { class: 'card', style: 'margin-top:20px' }, h('summary', {}, 'Виконані (' + done.length + ')'), done.map(row),
           h('button', { class: 'link', type: 'button', onclick: () => { hm.tasks = hm.tasks.filter((t) => !t.done); save(); render(); } }, 'Очистити виконані')) : null,
+        shareFromMine(),
         h('p', { class: 'note' }, 'Задачі з дедлайном потрапляють у розклад до цієї дати, а прострочені одразу на сьогодні. Повторювані з\u02bcявляються в розкладі самі, а коли забуваєш, піднімаються на сьогодні.')];
     }
 

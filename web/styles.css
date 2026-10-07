@@ -479,3 +479,7 @@ svg.i { width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:1.
   .chore-row { grid-template-columns:minmax(0,1fr) auto; }
   .chore-main { min-width:0; }
 }
+
+/* v12: згорнутий список «не вмістилось» */
+.unplaced summary { cursor:pointer; color:var(--warn, #b4441f); font-size:15px; }
+.unplaced .h-list li { display:flex; justify-content:space-between; gap:12px; align-items:baseline; }

@@ -88,7 +88,15 @@ async function loadScopeData() {
     state = { ...defaults(), ...data.data }; setSync('Синхронізовано');
     if (mine && inc && window.DuckyMerge) { const before = JSON.stringify(inc); state.home = window.DuckyMerge.merge(mine, inc, Date.now()); if (before !== JSON.stringify(state.home)) { saveLocal(); setTimeout(save, 0); } }
   }
-  else await pushRemote();              // першe використання: завантажуємо локальний кеш у базу
+  else {
+    // перше використання сімейної комори: пропонуємо взяти дані з «Моєї комори», щоб не вводити все заново
+    if (scope !== 'me') {
+      const mineP = loadState(user.id);
+      const filled = (s) => (s.products || []).length || (s.recipes || []).length || ((s.home || {}).tasks || []).length || ((s.home || {}).chores || []).length;
+      if (filled(mineP) && !filled(state) && window.confirm('Сімейна комора ще порожня. Скопіювати в неї дані з твоєї «Моєї комори»? Сама «Моя комора» лишиться як є.')) { state = { ...mineP, tab: state.tab }; saveLocal(); }
+    }
+    await pushRemote();                 // першe використання: завантажуємо локальний кеш у базу
+  }
   return true;
 }
 function unsubscribeRealtime() {
