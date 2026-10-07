@@ -827,6 +827,25 @@
       item('Змінити тему', () => { closeFn(); btn('themeBtn').click(); }),
       item('Вийти', () => { closeFn(); btn('logoutBtn').click(); })));
   }
+  // шестерня в шапці на телефоні: тема, встановлення, вихід. Працює і в режимі «Дім», де немає кнопки «Ще»
+  function settingsSheet() {
+    let closeFn = null; const btn = (id) => document.getElementById(id);
+    const item = (label, fn) => h('button', { class: 'sheet-item', type: 'button', onclick: () => { closeFn(); fn(); } }, label);
+    const dark = document.documentElement.dataset.theme === 'dark';
+    const rows = [];
+    if (user && user.name) rows.push(h('p', { class: 'mute', style: 'margin:0 0 6px;padding:0 4px' }, user.name + (user.email ? ' · ' + user.email : '')));
+    rows.push(item(dark ? 'Світла тема' : 'Темна тема', () => btn('themeBtn').click()));
+    if (btn('installBtn') && !btn('installBtn').hidden) rows.push(item('Встановити застосунок', () => btn('installBtn').click()));
+    if (store.get('ducky.mode') !== 'home') rows.push(item('Профіль і налаштування', () => { state.tab = 'profile'; saveLocal(); render(); }));
+    rows.push(item('Вийти', () => btn('logoutBtn').click()));
+    closeFn = X.openModal('Налаштування', h('div', { class: 'sheet' }, rows));
+  }
+  const setBtn = h('button', { id: 'setBtn', class: 'ghost', type: 'button', 'aria-label': 'Налаштування', title: 'Налаштування', hidden: true, onclick: settingsSheet },
+    S('svg', { viewBox: '0 0 24 24', width: 20, height: 20, fill: 'none', stroke: 'currentColor', 'stroke-width': 1.7, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true' },
+      S('circle', { cx: 12, cy: 12, r: 3 }), S('path', { d: 'M12 2.5v2.4 M12 19.1v2.4 M2.5 12h2.4 M19.1 12h2.4 M5.3 5.3 7 7 M17 17l1.7 1.7 M5.3 18.7 7 17 M17 7l1.7-1.7' })));
+  (function placeSettingsBtn() { const right = document.querySelector('header .right'); if (right) right.append(setBtn); })();
+  const origRender2 = render;
+  render = function () { origRender2(); setBtn.hidden = !(user && state); };   // eslint-disable-line no-func-assign
   function mobileNav() {
     const nav = document.getElementById('nav');
     if (!nav || !mq.matches || nav.hidden || !user || !state) return;
