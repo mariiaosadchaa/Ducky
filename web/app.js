@@ -46,6 +46,8 @@ let scope = 'me';
 let memberships = [];      // [{ id, name }] домогосподарства з Rivna app, де користувач є учасником
 let channel = null;        // realtime-підписка на спільну комору
 let pendingRemote = false; // прийшли зміни від іншого учасника, поки користувач друкував
+// адмін спільного дому: власник або адмін у Rivna app; в особистій коморі користувач сам собі адмін
+const isHouseAdmin = () => { if (scope === 'me') return true; const m = memberships.find((x) => x.id === scope); return !!m && (m.role === 'owner' || m.role === 'admin'); };
 const cacheId = () => (scope === 'me' ? user.id : 'h.' + scope);
 function saveLocal() { if (state && user) store.set(KEY + '.' + cacheId(), state); }
 function save() {
@@ -68,14 +70,15 @@ async function pushRemote() {
 async function loadMemberships() {
   memberships = [];
   try {
-    const mem = await sb.from('household_members').select('household_id').eq('user_id', user.id);
+    const mem = await sb.from('household_members').select('household_id, role').eq('user_id', user.id);
     if (mem.error || !mem.data || !mem.data.length) return;
     const ids = [...new Set(mem.data.map((m) => m.household_id))];
+    const roleOf = new Map(mem.data.map((m) => [m.household_id, m.role]));
     const hh = await sb.from('households').select('id, name').in('id', ids);
     const names = new Map((hh.data || []).map((x) => [x.id, x.name]));
     let counts = new Map();
     try { const all = await sb.from('household_members').select('household_id, user_id').in('household_id', ids); (all.data || []).forEach((r) => counts.set(r.household_id, (counts.get(r.household_id) || 0) + 1)); } catch (e) { counts = new Map(); }
-    memberships = ids.map((id) => ({ id, name: names.get(id) || 'Сім\'я', n: counts.get(id) || 0 }));
+    memberships = ids.map((id) => ({ id, name: names.get(id) || 'Сім\'я', n: counts.get(id) || 0, role: roleOf.get(id) || 'member' }));
     // однакові назви: додаємо кількість учасників і короткий код, щоб відрізнити
     const dup = new Map(); memberships.forEach((m) => dup.set(m.name, (dup.get(m.name) || 0) + 1));
     memberships.forEach((m) => { if (dup.get(m.name) > 1) m.name += ' · ' + (m.n ? m.n + ' учасн. · ' : '') + '#' + String(m.id).slice(0, 4); });
@@ -137,6 +140,7 @@ async function switchScope(next) {
   unsubscribeRealtime();
   scope = next; remoteReady = false;
   store.set(SCOPE_KEY + user.id, scope);
+  if (scope !== 'me') store.set('ducky.hs.' + user.id, scope);
   state = loadState(cacheId());
   render();
   if (!(await loadScopeData())) {
@@ -860,7 +864,7 @@ function applyTheme() {
   const dark = saved ? saved === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
   $theme.textContent = dark ? 'Світла тема' : 'Темна тема';
-  const tc = document.querySelector('meta[name="theme-color"]'); if (tc) tc.content = dark ? '#0b1220' : '#f4f6fb';
+  const tc = document.querySelector('meta[name="theme-color"]'); if (tc) tc.content = dark ? '#080807' : '#f4f1ec';
   if (window.DuckyFX) window.DuckyFX.refreshColors();
 }
 
@@ -883,7 +887,7 @@ function drawScope() {
     ...memberships.map((m) => h('option', { value: m.id }, 'Сім\'я: ' + m.name)));
   $scope.value = scope;
 }
-$scope.addEventListener('change', () => switchScope($scope.value));
+$scope.addEventListener('change', () => { if (user && $scope.value === 'me' && store.get('ducky.mode') === 'home') store.set('ducky.hme.' + user.id, '1'); else if (user) store.set('ducky.hme.' + user.id, ''); switchScope($scope.value); });
 $theme.addEventListener('click', () => {
   const go = () => {
     store.set(THEME_KEY, document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
