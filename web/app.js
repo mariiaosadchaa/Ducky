@@ -131,6 +131,28 @@ function subscribeRealtime() {
       .subscribe();
   } catch (e) { channel = null; }
 }
+// телефон: згорнутий застосунок втрачає зʼєднання, тому при поверненні (і раз на хвилину) підтягуємо зміни інших учасників
+let refreshing = false;
+async function refreshRemote() {
+  if (refreshing || !remote || !user || !remoteReady || scope === 'me' || document.hidden || !state) return;
+  refreshing = true; const hid = scope;
+  try {
+    const { data, error } = await sb.from('ducky_household_data').select('data').eq('household_id', hid).maybeSingle();
+    if (error || !data || !data.data || scope !== hid) return;
+    const before = JSON.stringify(state); const mine = state.home; const inc = data.data.home; const tab = state.tab;
+    state = { ...defaults(), ...data.data, tab };
+    let back = false;
+    if (mine && window.DuckyMerge) { const b = JSON.stringify(inc); state.home = window.DuckyMerge.merge(mine, inc, Date.now()); back = b !== JSON.stringify(state.home); }
+    if (JSON.stringify(state) === before) return;
+    saveLocal(); setSync('Оновлено'); if (back) save();
+    const a = document.activeElement;
+    if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) pendingRemote = true; else render();
+  } catch (e) { /* без мережі: спробуємо наступного разу */ } finally { refreshing = false; }
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { if (scope !== 'me') subscribeRealtime(); refreshRemote(); } });
+window.addEventListener('focus', refreshRemote);
+window.addEventListener('online', () => { if (scope !== 'me') subscribeRealtime(); refreshRemote(); });
+setInterval(refreshRemote, 60000);
 document.addEventListener('focusout', () => { if (pendingRemote) { pendingRemote = false; setTimeout(render, 0); } });
 
 async function switchScope(next) {

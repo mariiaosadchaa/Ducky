@@ -1,6 +1,6 @@
 'use strict';
 // Service worker Ducky: мережа спершу, кеш як запасний варіант (офлайн).
-const CACHE = 'ducky-v13';
+const CACHE = 'ducky-v14';
 const SHELL = ['./', 'index.html', 'styles.css', 'fx.js', 'app.js', 'extras.js', 'more.js', 'config.js', 'vendor/supabase.js',
   'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png'];
 
