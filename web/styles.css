@@ -492,3 +492,14 @@ svg.i { width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:1.
 /* v12: згорнутий список «не вмістилось» */
 .unplaced summary { cursor:pointer; color:var(--warn, #b4441f); font-size:15px; }
 .unplaced .h-list li { display:flex; justify-content:space-between; gap:12px; align-items:baseline; }
+
+/* шапка на комп'ютері: у першому рядку логотип і розділи, у другому керування одним рівним рядом */
+@media (min-width:701px) {
+  header.top { row-gap:14px; padding:22px 56px 14px; }
+  header.top nav { flex-wrap:nowrap; white-space:nowrap; }
+  header.top .right { order:3; flex:1 1 100%; justify-content:flex-end; flex-wrap:wrap; gap:10px; padding-top:12px; border-top:1px solid var(--line); }
+  header.top .right .sync { margin-right:auto; }
+  header.top .right .who { margin:0 6px 0 0; }
+  header.top .right .ghost { height:38px; padding:0 16px; display:inline-flex; align-items:center; white-space:nowrap; }
+  header.top .right select.scope { width:auto; min-width:190px; max-width:300px; height:38px; padding:0 12px; font-size:13px; text-overflow:ellipsis; }
+}
