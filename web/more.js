@@ -1403,7 +1403,7 @@
       return h('label', { class: 'shop-row h-row' + (dn ? ' done' : '') },
         h('input', { type: 'checkbox', checked: dn ? true : null, disabled: opts && opts.readonly ? true : null, onchange: (e) => tick(i, e.target.checked) }),
         h('span', { class: 'shop-n' }, i.title,
-          h('span', { class: 'mute' }, [subs && ' · ' + subs.filter((s) => s.done).length + '/' + subs.length, rn && ' · ' + rn, i.who && ' · ' + i.who, i.must && ' · обовʼязково', i.overdue && ' · прострочено'].filter(Boolean).join(''))),
+          h('span', { class: 'mute' }, [subs && ' · ' + subs.filter((s) => s.done).length + '/' + subs.length, rn && ' · ' + rn, i.who && ' · ' + i.who + (multi() && i.auto === false ? ' (закріплено)' : ''), i.must && ' · обовʼязково', i.overdue && ' · прострочено'].filter(Boolean).join(''))),
         h('span', { class: 'tag h-time' }, P.fmtHM(i.startMin) + '–' + P.fmtHM(i.endMin)),
         h('span', { class: 'mute shop-p' }, mins(i.minutes)),
         opts && opts.readonly ? null : h('button', { class: 'link shop-x', type: 'button', title: 'Перенести або замінити', 'aria-label': 'Змінити: ' + i.title,
@@ -1498,6 +1498,10 @@
           ? h('div', { class: 'card' },
             h('div', { class: 'h-prog', role: 'progressbar', 'aria-valuenow': pct, 'aria-valuemin': 0, 'aria-valuemax': 100 }, h('span', { style: 'width:' + pct + '%' })),
             h('p', { class: 'mute', style: 'margin:8px 0 14px' }, snap.items.length === dn.length ? 'Усе зроблено. Можна відпочивати.' : (low ? 'Режим «мало сил»: лишилось найважливіше. ' : '') + 'План на сьогодні: ' + mins(total) + (capView(snap.caps, snap.cap) ? ', у графіку ' + mins(capView(snap.caps, snap.cap)) : '') + '.'),
+            multi() ? h('p', { class: 'note', style: 'margin:-6px 0 14px' }, people().map((n) => {
+              const mine = snap.items.filter((i) => lc(i.who) === lc(n)); const used = mine.reduce((s2, i) => s2 + i.minutes, 0); const cp = snap.caps && snap.caps[n];
+              return n + ': ' + (mine.length ? mins(used) : 'нічого') + (cp ? ' із ' + mins(cp) : '') + (cp && used > cp ? ' (більше, ніж вільного часу)' : '');
+            }).join(' · ')) : null,
             h('div', {}, open.map((i) => itemRow(i, false)), dn.map((i) => itemRow(i, true))),
             hidden ? h('p', { class: 'note', style: 'margin:10px 0 0' }, 'Сховано ' + hidden + ' (залишаться в розкладі). Вимкни режим, щоб побачити все.') : null)
           : h('p', { class: 'empty' }, empty ? 'Поки порожньо. Додай кімнати й справи у розділі «Прибирання» та задачі у «Задачі». Розклад складеться сам.' : 'На сьогодні нічого не заплановано. Гарного відпочинку.'),
@@ -1508,7 +1512,7 @@
           h('button', { class: 'ghost', type: 'button', onclick: () => { hm.snap = null; save(); render(); X.toast('Розклад на сьогодні перераховано'); } }, 'Перепланувати')),
         snap.items.length && open0.length === 0 ? moreCard(plan, snap) : null,
         freeTimeCard(snap, plan),
-        h('p', { class: 'note' }, 'Кнопка «перенести» ставить справу на інший день. Обовʼязкові справи не відкладаються автоматично. Серія рахується за днями, коли ти відкривала застосунок і закрила все обовʼязкове.')];
+        h('p', { class: 'note' }, 'Справи між вами діляться так: закріплені за людиною лишаються за нею, кімнату прибирає одна людина цілком, решта розподіляється за вільним часом кожного. Кнопка «змінити» переносить справу або замінює її іншою. Обовʼязкові справи не відкладаються автоматично. Серія рахується за днями, коли ти відкривала застосунок і закрила все обовʼязкове.')];
     }
 
     // ----- Розклад на тиждень (справи можна перетягувати між днями) -----
