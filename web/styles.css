@@ -532,3 +532,12 @@ svg.i { width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:1.
 /* шестерня налаштувань: лише на телефоні */
 #setBtn { display:none; }
 @media (max-width:700px) { header.top #setBtn:not([hidden]) { display:inline-flex; order:3; flex:none; align-items:center; justify-content:center; width:44px; height:44px; padding:0; margin-left:2px; } header.top #modeBtn { margin-right:0; } }
+
+/* телефон: нижній «ставок» компактніший, щоб під списком не було порожнього місця */
+@media (max-width:700px) {
+  .pond { height:56px; margin-top:4px; }
+  .pond .wave { height:56px; }
+  .pond .w2 { bottom:-6px; } .pond .w3 { bottom:-12px; }
+  .swimmer { bottom:14px; width:38px; }
+  main { padding-bottom:4px; }
+}

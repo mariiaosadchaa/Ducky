@@ -1086,16 +1086,33 @@
       const owner = new Map(); const explicit = new Set();
       for (const c of cand) { const p = byName[nm(c.who)]; if (p) { owner.set(base(c), p); explicit.add(base(c)); } if (owner.has(base(c))) load[owner.get(base(c))] += c.minutes; }
       const pick = (m) => people.slice().sort((a, b) => ((load[a] + m) / (week[a] || 1) + (week[a] ? 0 : 100)) - ((load[b] + m) / (week[b] || 1) + (week[b] ? 0 : 100)))[0];
-      const groups = new Map();
-      for (const c of cand) {
-        if (owner.has(base(c)) || c.after) continue;
-        const g = c.room ? 'r:' + c.room : 'k:' + base(c);
-        if (!groups.has(g)) groups.set(g, []); groups.get(g).push(c);
+      // розподіл за вільним часом кожного: частка справ пропорційна його часу за тиждень, а справа обов'язково іде тому, кому вона вміщується в день виконання (вихідний = часу немає)
+      const dates = Array.from({ length: n }, (_, i) => addDays(today, i));
+      const slack = {}; people.forEach((p) => { slack[p] = {}; dates.forEach((d) => { slack[p][d] = hrs[p][wdOf(d)].min; }); });
+      const dayPick = (p, c) => {          // найменш завантажений день у вікні справи для людини p, і чи вміщається справа
+        let best = null;
+        for (const d of dates) {
+          if (d < c.lo || d > c.hi) continue;
+          const cap = hrs[p][wdOf(d)].min; const used = cap - slack[p][d];
+          const ratio = cap > 0 ? (used + c.minutes) / cap : 99;
+          if (!best || ratio < best.ratio) best = { d, ratio, fits: cap > 0 && slack[p][d] >= c.minutes };
+        }
+        return best;
+      };
+      for (const c of cand) { const p = owner.get(base(c)); if (p && !/#/.test(c.key)) { const b = dayPick(p, c); if (b) slack[p][b.d] -= c.minutes; } }   // закріплені займають свій час
+      const free = cand.filter((c) => !owner.has(base(c)) && !c.after && !/#/.test(c.key))
+        .sort((a, b) => (b.forced ? 1 : 0) - (a.forced ? 1 : 0) || (a.hi < b.hi ? -1 : a.hi > b.hi ? 1 : 0) || b.minutes - a.minutes);
+      for (const c of free) {
+        if (owner.has(base(c))) continue;
+        let pk = null;
+        for (const p of people) {
+          const b = dayPick(p, c);
+          const wk = (load[p] + c.minutes) / (week[p] || 1) + (week[p] ? 0 : 100);
+          const score = (b && b.fits ? 0 : 10) + wk;
+          if (!pk || score < pk.score) pk = { p, score, b };
+        }
+        owner.set(base(c), pk.p); load[pk.p] += c.minutes; if (pk.b) slack[pk.p][pk.b.d] -= c.minutes;
       }
-      [...groups.values()].sort((a, b) => b.reduce((s2, x) => s2 + x.minutes, 0) - a.reduce((s2, x) => s2 + x.minutes, 0)).forEach((g) => {
-        const m = g.reduce((s2, x) => s2 + x.minutes, 0); const p = pick(m); load[p] += m;
-        g.forEach((c) => owner.set(base(c), p));
-      });
       for (const c of cand) {   // залежні справи йдуть до того, хто робить попередню
         if (owner.has(base(c))) continue;
         const p = owner.get(c.after) || pick(c.minutes); load[p] += c.minutes; owner.set(base(c), p);
@@ -1512,7 +1529,7 @@
           h('button', { class: 'ghost', type: 'button', onclick: () => { hm.snap = null; save(); render(); X.toast('Розклад на сьогодні перераховано'); } }, 'Перепланувати')),
         snap.items.length && open0.length === 0 ? moreCard(plan, snap) : null,
         freeTimeCard(snap, plan),
-        h('p', { class: 'note' }, 'Справи між вами діляться так: закріплені за людиною лишаються за нею, кімнату прибирає одна людина цілком, решта розподіляється за вільним часом кожного. Кнопка «змінити» переносить справу або замінює її іншою. Обовʼязкові справи не відкладаються автоматично. Серія рахується за днями, коли ти відкривала застосунок і закрила все обовʼязкове.')];
+        h('p', { class: 'note' }, 'Справи між вами діляться так: закріплені за людиною лишаються за нею, решта розподіляється за вільним часом кожного (кімната може ділитись між вами). Кнопка «змінити» переносить справу або замінює її іншою. Обовʼязкові справи не відкладаються автоматично. Серія рахується за днями, коли ти відкривала застосунок і закрила все обовʼязкове.')];
     }
 
     // ----- Розклад на тиждень (справи можна перетягувати між днями) -----
