@@ -107,3 +107,18 @@ details > summary { font-weight:700; }
 /* екран нової версії */
 .upd-box h2 { font:700 28px var(--serif); }
 .upd-btn { min-height:54px; }
+
+/* меню справи: великі зрозумілі дії */
+.act-list { display:grid; gap:10px; }
+.act { display:flex; align-items:center; gap:14px; width:100%; text-align:left; background:var(--card); color:var(--fg); border:2px solid var(--line); border-radius:16px; padding:12px 14px; box-shadow:0 3px 0 var(--line); cursor:pointer; font-family:var(--sans); letter-spacing:0; text-transform:none; }
+.act:active { transform:translateY(2px); box-shadow:0 1px 0 var(--line); }
+.act-i { flex:none; width:44px; height:44px; border-radius:12px; display:grid; place-items:center; font-size:22px; background:color-mix(in srgb, var(--gold) 16%, var(--card)); }
+.act-t { display:grid; gap:2px; min-width:0; }
+.act-t b { font-size:16px; }
+.act-t small { color:var(--mute); font-size:13px; line-height:1.35; font-weight:400; }
+.act-give { border:2px solid var(--line); border-radius:16px; padding:12px 14px; display:grid; gap:4px; }
+.act-lbl { font:700 12px var(--sans); letter-spacing:.09em; text-transform:uppercase; color:var(--mute); margin-bottom:6px; }
+.act-list .link { justify-self:center; }
+.seg { display:grid; grid-auto-flow:column; grid-auto-columns:1fr; gap:6px; background:var(--bg); padding:4px; border-radius:14px; }
+.segb { border:0; background:transparent; border-radius:11px; padding:10px 6px; font:700 14px var(--sans); color:var(--mute); cursor:pointer; }
+.segb.on { background:var(--card); color:var(--gold); box-shadow:0 0 0 2px var(--line); }

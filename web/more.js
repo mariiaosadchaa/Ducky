@@ -1351,35 +1351,45 @@
       closeFn = X.openModal('Перенести: ' + item.title, h('div', { class: 'sheet' },
         Array.from({ length: 7 }, (_, i) => P.addDays(today, i)).map((d, i) => h('button', { class: 'sheet-item', type: 'button', onclick: () => { closeFn(); setPin(item, d); } }, (i === 0 ? 'Сьогодні · ' : i === 1 ? 'Завтра · ' : '') + dayName(d)))));
     }
-    // замінити справу іншою: обрана стає на цей день, а замінена йде на день обраної (або на завтра)
-    function replacePicker(item) {
+    // дані для заміни: що ще треба зробити, окрім цієї справи
+    function replaceData(item) {
       const hm = HM(); const today = todayD(); const date = item.date || today;
       const plan = P.planWeek(hm, today, { days: 21 });
       const placed = new Map(); plan.days.forEach((d) => d.items.forEach((i) => { if (!/#/.test(i.key) && !placed.has(i.key)) placed.set(i.key, { i, when: d.date }); }));
       const isMe = (i) => !item.who || !i.who || lc(i.who) === lc(item.who);
       const rows = [];
       placed.forEach(({ i, when }) => { if (i.key !== item.key && when !== date && !i.after && isMe(i)) rows.push({ i, when }); });
-      rows.sort((a, b) => (a.when < b.when ? -1 : a.when > b.when ? 1 : 0));
+      rows.sort((a, b) => (isMustItem(b.i) - isMustItem(a.i)) || (a.when < b.when ? -1 : a.when > b.when ? 1 : 0));
       const seen = new Set(placed.keys());
       const others = [...hm.chores.map((c) => ({ i: { key: 'c:' + c.id, type: 'chore', id: c.id, title: c.title, room: c.room, minutes: Number(c.minutes) || 15, who: c.who || '' }, when: null })),
         ...hm.tasks.filter((t) => !t.done).map((t) => ({ i: { key: 't:' + t.id, type: 'task', id: t.id, title: t.title, room: t.room, minutes: Number(t.minutes) || 20, who: t.who || '' }, when: null }))]
         .filter((r) => !seen.has(r.i.key) && r.i.key !== item.key);
-      let closeFn = null;
-      const pickOne = (r) => {
-        closeFn();
-        const y = findSrc(r.i); const x = findSrc(item); if (!x || !y) return;
-        y.pin = date; delete y.snooze; delete y.carry;
-        if (item.who && lc(y.who) !== lc(item.who) && multi()) y.who = item.who;
-        delete x.carry;
-        if (r.when && r.when !== date) x.pin = r.when; else { delete x.pin; x.snooze = P.addDays(date, 1); }
-        save(); render();
-        X.toast('Замінила «' + item.title + '» на «' + r.i.title + '» · ' + (date === today ? 'сьогодні' : dayName(date)));
-      };
-      const btn = (r) => h('button', { class: 'sheet-item', type: 'button', onclick: () => pickOne(r) }, r.i.title + (r.i.room && roomName(r.i.room) ? ' · ' + roomName(r.i.room) : '') + ' · ' + mins(r.i.minutes) + (r.when ? ' · було ' + dayName(r.when) : ' · без дати'));
-      const body = (rows.length || others.length) ? [...rows.map(btn), ...others.map(btn)] : [h('p', { class: 'mute' }, 'Інших справ немає. Додай їх у «Прибирання» або «Задачі».')];
-      closeFn = X.openModal('Замінити: ' + item.title, h('div', { class: 'sheet' }, body));
+      return { rows, others, date, today };
     }
-    // натиснули на справу: перенести, замінити або відкласти
+    // справа r ставати на місце item, а item іде на день, де була r (або на завтра)
+    function swapWith(item, r, date) {
+      const today = todayD();
+      const y = findSrc(r.i); const x = findSrc(item); if (!x || !y) return;
+      y.pin = date; delete y.snooze; delete y.carry;
+      if (item.who && lc(y.who) !== lc(item.who) && multi()) y.who = item.who;
+      delete x.carry;
+      if (r.when && r.when !== date) x.pin = r.when; else { delete x.pin; x.snooze = P.addDays(date, 1); }
+      save(); render();
+      X.toast('Замінила на «' + r.i.title + '»' + (date === today ? ' · сьогодні' : ' · ' + dayName(date)));
+    }
+    // автоматична заміна: найближча справа, яку ще треба зробити (спершу прострочені й важливі)
+    function autoReplace(item) {
+      const d = replaceData(item); const pick = d.rows[0] || d.others[0];
+      if (!pick) { X.toast('Більше нічого не потрібно робити найближчим часом'); return; }
+      swapWith(item, pick, d.date);
+    }
+    // вибір вручну (запасний варіант)
+    function replacePicker(item) {
+      const d = replaceData(item); let closeFn = null;
+      const btn = (r) => h('button', { class: 'sheet-item', type: 'button', onclick: () => { closeFn(); swapWith(item, r, d.date); } }, r.i.title + (r.i.room && roomName(r.i.room) ? ' · ' + roomName(r.i.room) : '') + ' · ' + mins(r.i.minutes) + (r.when ? ' · було ' + dayName(r.when) : ''));
+      const body = (d.rows.length || d.others.length) ? [...d.rows.map(btn), ...d.others.map(btn)] : [h('p', { class: 'mute' }, 'Інших справ немає. Додай їх у «Прибирання» або «Задачі».')];
+      closeFn = X.openModal('Обрати заміну', h('div', { class: 'sheet' }, body));
+    }
     // передати справу іншій людині (лише цього разу або назавжди)
     function handoff(item, name, forever) {
       const x = findSrc(item); if (!x) return;
@@ -1390,17 +1400,30 @@
       save(); render();
       X.toast(name === null ? 'Розподілю сама: ' + item.title : 'Передано: ' + item.title + ' → ' + name + (repeating && !forever ? ' (цього разу)' : ''));
     }
+    // натиснули на справу: замінити, перенести, відкласти або передати
     function itemMenu(item) {
       let closeFn = null; const go = (fn) => () => { closeFn(); fn(); };
       const others = multi() ? people().filter((n) => lc(n) !== lc(item.who || meName())) : [];
       const src = findSrc(item); const repeating = !!src && (item.type === 'chore' || Number(src.every) > 0);
-      closeFn = X.openModal(item.title, h('div', { class: 'sheet' },
-        ...others.map((n) => h('button', { class: 'sheet-item', type: 'button', onclick: go(() => handoff(item, n, false)) }, 'Передати: ' + n + (repeating ? ' (цього разу)' : ''))),
-        ...(repeating ? others.map((n) => h('button', { class: 'sheet-item', type: 'button', onclick: go(() => handoff(item, n, true)) }, 'Передати: ' + n + ' назавжди')) : []),
-        src && multi() && (src.who || src.who_once) ? h('button', { class: 'sheet-item', type: 'button', onclick: go(() => handoff(item, null, true)) }, 'Прибрати закріплення за людиною') : null,
-        h('button', { class: 'sheet-item', type: 'button', onclick: go(() => replacePicker(item)) }, 'Замінити іншою справою'),
-        h('button', { class: 'sheet-item', type: 'button', onclick: go(() => movePicker(item)) }, 'Перенести на інший день'),
-        h('button', { class: 'sheet-item', type: 'button', onclick: go(() => postpone(item)) }, 'Відкласти на завтра')));
+      let forever = false;
+      const act = (ico, title, sub, fn) => h('button', { class: 'act', type: 'button', onclick: go(fn) },
+        h('span', { class: 'act-i', 'aria-hidden': 'true' }, ico), h('span', { class: 'act-t' }, h('b', {}, title), h('small', {}, sub)));
+      const segOnce = h('button', { class: 'segb on', type: 'button' }, 'Цього разу');
+      const segAll = h('button', { class: 'segb', type: 'button' }, 'Назавжди');
+      segOnce.onclick = () => { forever = false; segOnce.classList.add('on'); segAll.classList.remove('on'); };
+      segAll.onclick = () => { forever = true; segAll.classList.add('on'); segOnce.classList.remove('on'); };
+      const give = others.length ? h('div', { class: 'act-give' },
+        h('div', { class: 'act-lbl' }, 'Передати іншій людині'),
+        repeating ? h('div', { class: 'seg', style: 'margin-bottom:8px' }, segOnce, segAll) : null,
+        h('div', { class: 'toolbar' }, others.map((n) => h('button', { class: 'primary', type: 'button', onclick: () => { closeFn(); handoff(item, n, forever); } }, n)))) : null;
+      closeFn = X.openModal(item.title, h('div', { class: 'act-list' },
+        h('p', { class: 'mute', style: 'margin:0 0 4px' }, [mins(item.minutes), item.room && roomName(item.room)].filter(Boolean).join(' · ')),
+        act('🔄', 'Замінити', 'Поставлю замість неї наступну справу, яку ще треба зробити', () => autoReplace(item)),
+        act('📅', 'Перенести', 'Обрати інший день', () => movePicker(item)),
+        act('🌙', 'На завтра', 'Відкласти без заміни', () => postpone(item)),
+        give,
+        src && multi() && (src.who || src.who_once) ? h('button', { class: 'link', type: 'button', onclick: go(() => handoff(item, null, true)) }, 'Прибрати закріплення за людиною') : null,
+        h('button', { class: 'link', type: 'button', onclick: go(() => replacePicker(item)) }, 'Обрати заміну самій')));
     }
     function itemRow(i, dn, opts) {
       const rn = i.room ? roomName(i.room) : ''; const subs = subsOf(i);
