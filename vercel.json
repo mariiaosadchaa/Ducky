@@ -1,7 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
-  "buildCommand": "node stamp-version.js",
+  "buildCommand": "node stamp-version.js || true",
   "installCommand": null,
   "outputDirectory": "web"
 }
