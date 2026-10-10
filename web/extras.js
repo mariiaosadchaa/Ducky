@@ -609,6 +609,53 @@
     window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => { /* офлайн-режим необов'язковий */ }); });
   }
 
+  // ---------- нова версія: екран на весь екран з кнопкою «Оновити» ----------
+  // Версія береться з sw.js (рядок CACHE): при кожному деплої вона інша, тож не треба перевстановлювати застосунок на телефоні.
+  (function updater() {
+    if (!/^https?:$/.test(location.protocol)) return;
+    let loadedV = null; let shown = false; let snoozeUntil = 0;
+    const readV = () => fetch('sw.js', { cache: 'no-store' }).then((r) => (r.ok ? r.text() : '')).then((t) => { const m = /CACHE\s*=\s*'([^']+)'/.exec(t); return m ? m[1] : null; }).catch(() => null);
+    function applyUpdate(btn) {
+      if (btn) { btn.disabled = true; btn.textContent = 'Оновлюємо…'; }
+      const done = () => { location.reload(); };
+      const go = async () => {
+        try {
+          const reg = navigator.serviceWorker && await navigator.serviceWorker.getRegistration();
+          if (reg) { await reg.update().catch(() => {}); if (reg.waiting) reg.waiting.postMessage('skip'); }
+          if (window.caches) { const ks = await caches.keys(); await Promise.all(ks.map((k) => caches.delete(k))); }
+        } catch (e) { /* все одно перезавантажимо */ }
+        done();
+      };
+      go();
+      setTimeout(done, 4000);
+    }
+    function showUpdate() {
+      if (shown || Date.now() < snoozeUntil) return; shown = true;
+      const ov = document.createElement('div'); ov.className = 'upd-ov'; ov.setAttribute('role', 'alertdialog'); ov.setAttribute('aria-label', 'Нова версія');
+      ov.innerHTML = '<div class="upd-box"><svg width="84" height="84" viewBox="0 0 100 100" aria-hidden="true"><use href="#duck"/></svg><h2>Є нова версія 🦆</h2><p>Кря! Ducky став кращим. Натисни, щоб оновитись, це займе секунду.</p></div>';
+      const box = ov.firstChild;
+      const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'primary upd-btn'; btn.textContent = 'Оновити';
+      btn.addEventListener('click', () => applyUpdate(btn));
+      const later = document.createElement('button'); later.type = 'button'; later.className = 'link upd-later'; later.textContent = 'Пізніше';
+      later.addEventListener('click', () => { ov.remove(); shown = false; snoozeUntil = Date.now() + 30 * 60000; });
+      box.append(btn, later); document.body.append(ov);
+    }
+    async function check() {
+      if (document.hidden || shown) return;
+      const v = await readV(); if (!v) return;
+      if (loadedV === null) { loadedV = v; return; }
+      if (v !== loadedV) showUpdate();
+    }
+    readV().then((v) => { if (loadedV === null) loadedV = v; });
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) check(); });
+    window.addEventListener('focus', check);
+    setInterval(check, 5 * 60000);
+    if ('serviceWorker' in navigator) {
+      const hadController = !!navigator.serviceWorker.controller;
+      navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadController) setTimeout(check, 300); });
+    }
+  })();
+
   // ---------- підключення до app.js ----------
   TABS.push(['charts', 'Графіки'], ['profile', 'Профіль']);
   VIEWS.charts = viewCharts;

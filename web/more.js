@@ -919,7 +919,6 @@
     const addDays = (iso, n) => { const d = new Date(iso + 'T12:00:00'); d.setDate(d.getDate() + n); return localISO(d); };
     const wdOf = (iso) => (new Date(iso + 'T12:00:00').getDay() + 6) % 7;      // Пн = 0
     const diff = (a, b) => Math.round((new Date(a + 'T12:00:00') - new Date(b + 'T12:00:00')) / 86400000);
-    const hm = (t) => { const m = /^(\d{1,2}):(\d{2})/.exec(String(t || '')); return m ? Number(m[1]) * 60 + Number(m[2]) : 18 * 60; };
     const fmtHM = (m) => pad(Math.floor(m / 60) % 24) + ':' + pad(m % 60);
     // порядок у кімнаті: спершу пил, потім пилосос, у кінці вологе прибирання підлоги
     const stepOf = (title) => {
@@ -929,78 +928,72 @@
       if (/підлог|швабр|помит.*пол|мокре/.test(t)) return 4;
       return 2;
     };
-    const DEF_W = [0, 1, 2, 3, 4].map(() => [[18 * 60 + 30, 19 * 60 + 15]]).concat([[[10 * 60, 12 * 60 + 30]], [[11 * 60, 13 * 60]]]);
-    const DEF_HOURS = DEF_W.map((w) => ({ w: w.map((x) => [fmtHM(x[0]), fmtHM(x[1])]) }));
-    // години на день: «вікна» (до двох), напр. 19:00–20:00 і 08:00–08:20; старий формат start+min теж читається
-    const hoursFrom = (arr) => DEF_W.map((dw, i) => {
-      const h = (Array.isArray(arr) ? arr : [])[i] || {}; let wins;
-      if (h.off) wins = [];
-      else if (Array.isArray(h.w)) wins = h.w.map((x) => [hm(x[0]), hm(x[1])]).filter((x) => x[1] > x[0]);
-      else if (h.start || h.min != null) { const st = hm(h.start || fmtHM(dw[0][0])); const m = h.min == null || h.min === '' ? dw[0][1] - dw[0][0] : Math.max(0, Number(h.min) || 0); wins = m > 0 ? [[st, st + m]] : []; }
-      else wins = dw;
-      wins.sort((a, b) => a[0] - b[0]);
-      const cap = wins.reduce((s2, x) => s2 + (x[1] - x[0]), 0);
-      return { start: fmtHM(wins[0] ? wins[0][0] : 18 * 60), min: cap, wins };
-    });
-    const hoursOf = (home) => hoursFrom(home.hours);
-    // кілька людей: у кожного свій графік (hoursBy), справи розподіляються між ними
+    // кілька людей: імена з home.people
     const peopleOf = (home) => { const seen = new Set(); return (Array.isArray(home.people) ? home.people : []).map((x) => String(x || '').trim()).filter((x) => x && !seen.has(x.toLowerCase()) && seen.add(x.toLowerCase())); };
-    const hoursFor = (home, name) => hoursFrom(((home.hoursBy || {})[name]) || home.hours);
+    // на скільки днів справу можна зсунути в обидва боки від строку (щотижня ±3, раз на місяць ±7)
+    const tolOf = (every) => (every >= 60 ? 14 : every >= 25 ? 7 : every >= 12 ? 5 : every >= 6 ? 3 : every >= 3 ? 1 : 0);
+    const LOOK = 28;       // скільки днів наперед враховуємо, щоб навантаження вирівнювалось і далі за тиждень
 
-    // Склад «що й коли»: кожна справа має «строк» і вікно, в якому її можна переносити
+    // Склад «що й коли»: кожна справа має строк і вікно, в якому її можна поставити
     function candidates(home, today, horizonEnd) {
       const out = [];
       const rec = (home.chores || []).map((c) => ({ ...c, _t: 'chore' })).concat((home.tasks || []).filter((t) => !t.done && Number(t.every) > 0).map((t) => ({ ...t, _t: 'task', must: t.prio === 'high', room: t.room || null })));
       rec.forEach((c, idx) => {
         const every = Math.max(1, Number(c.every) || 7);
         const last = c.last || null;
+        const fixedWd = c.wd != null && c.wd !== '' && !isNaN(Number(c.wd));
+        const carried = !!c.carry && c.carry < today && (!last || last < c.carry);     // вчора не зроблено: переходить на сьогодні
         let next = last ? addDays(last, every) : addDays(today, c.must ? 0 : idx % Math.min(every, 7));
-        if (c.wd != null && c.wd !== '' && !isNaN(Number(c.wd))) {
+        if (fixedWd) {
           const base = next < today ? today : next; const w = Number(c.wd);
           next = addDays(base, (w - wdOf(base) + 7) % 7);
         }
-        const flex = c.wd != null && c.wd !== '' ? 0 : every >= 14 ? 3 : every >= 7 ? 2 : every >= 3 ? 1 : 0;
-        const slack = c.must || (c.wd != null && c.wd !== '') ? 0 : every >= 7 ? 2 : every >= 3 ? 1 : 0;
+        const tol = c.must || fixedWd ? 0 : tolOf(every);
         for (let k = 0; k < 40; k++) {
           const due = k === 0 ? next : addDays(next < today ? today : next, k * every);
-          if (due > (k === 0 ? addDays(horizonEnd, flex) : horizonEnd)) break;
-          const overdue = due < today;
-          const fl = k === 0 ? flex : 0;
-          let lo = overdue ? today : addDays(due, -fl); if (lo < today) lo = today;
-          let hi = overdue ? (c.must ? today : addDays(today, Math.min(2, slack + 1))) : addDays(due, slack);
+          if (due > (k === 0 ? addDays(horizonEnd, tol) : horizonEnd)) break;
+          const overdue = k === 0 && (due < today || carried);
+          let lo = overdue ? today : addDays(due, k === 0 ? -tol : 0); if (lo < today) lo = today;
+          let hi = overdue ? (c.must || carried || due >= addDays(today, -1) ? today : addDays(today, 2)) : addDays(due, tol);   // учорашнє й незроблене вчора: сьогодні; старіше: у найближчі дні, щоб не було завалу
           if (c.snooze && k === 0 && lo < c.snooze) { lo = c.snooze; if (hi < lo) hi = lo; }
           let pinned = false;
           if (k === 0 && c.pin && c.pin >= today) { if (c.pin > horizonEnd) continue; lo = c.pin; hi = c.pin; pinned = true; }
           if (hi > horizonEnd) hi = horizonEnd;
           if (lo > hi) continue;
-          out.push({ key: (c._t === 'task' ? 't:' : 'c:') + c.id + (k ? '#' + k : ''), type: c._t, id: c.id, title: c.title, room: c.room, minutes: Math.max(1, Number(c.minutes) || (c._t === 'task' ? 20 : 15)), must: !!c.must, due, overdue, lo, hi, fixed: c.wd != null && c.wd !== '', who: c.who || '', after: c.after || null, last: c.last || null, forced: pinned || !!c.must || overdue && !!c.must, step: c._t === 'task' ? 0 : stepOf(c.title), prio: c._t === 'task' ? (c.prio || 'norm') : 'norm', repeat: c._t === 'task' });
+          out.push({ key: (c._t === 'task' ? 't:' : 'c:') + c.id + (k ? '#' + k : ''), type: c._t, id: c.id, title: c.title, room: c.room, minutes: Math.max(1, Number(c.minutes) || (c._t === 'task' ? 20 : 15)), must: !!c.must, due, overdue, lo, hi, fixed: fixedWd,
+            who: (k === 0 && c.who_once) || c.who || '', once: k === 0 && !!c.who_once, after: c.after || null, last: last, forced: pinned || !!c.must || overdue, step: c._t === 'task' ? 0 : stepOf(c.title), prio: c._t === 'task' ? (c.prio || 'norm') : 'norm', repeat: c._t === 'task' });
         }
       });
       (home.tasks || []).forEach((t) => {
         if (t.done || Number(t.every) > 0) return;
-        const due = t.due || null; const overdue = !!due && due < today;
+        const due = t.due || null; const carried = !!t.carry && t.carry < today;
+        const overdue = (!!due && due < today) || carried;
         let lo = today; if (t.snooze && t.snooze > lo) lo = t.snooze;
-        let hi = due ? (due < today ? today : due) : (t.prio === 'high' ? addDays(today, 1) : horizonEnd);
+        let hi = due ? (due < today ? today : due) : (t.prio === 'high' ? addDays(today, 1) : addDays(today, 13));
+        if (carried && !(due && due > today)) hi = today;
         if (hi > horizonEnd) hi = horizonEnd;
         let pinned = false;
         if (t.pin && t.pin >= today) { if (t.pin > horizonEnd) return; lo = t.pin; hi = t.pin; pinned = true; }
         if (hi < lo) hi = lo;
         if (lo > horizonEnd) return;
-        out.push({ who: t.who || '', after: t.after || null, last: t.last || null, key: 't:' + t.id, type: 'task', id: t.id, title: t.title, room: t.room || null, minutes: Math.max(1, Number(t.minutes) || 20), must: false, due, overdue, lo, hi, forced: pinned || overdue || (t.prio === 'high' && !!due && due <= horizonEnd && hi === lo), step: 0, prio: t.prio || 'norm' });
+        out.push({ who: t.who_once || t.who || '', once: !!t.who_once, after: t.after || null, last: t.last || null, key: 't:' + t.id, type: 'task', id: t.id, title: t.title, room: t.room || null, minutes: Math.max(1, Number(t.minutes) || 20), must: false, due, overdue, lo, hi,
+          forced: pinned || overdue || (t.prio === 'high' && !!due && due <= horizonEnd && hi === lo), step: 0, prio: t.prio || 'norm' });
       });
       return out;
     }
 
+    // одна людина: справи рівномірно розкладаються по днях у межах свого вікна
     function planOne(home, today, opts) {
       const n = (opts && opts.days) || 7;
-      const horizonEnd = addDays(today, n - 1);
-      const hours = (opts && opts.hours) || hoursOf(home);
-      const days = Array.from({ length: n }, (_, i) => { const date = addDays(today, i); const hh = hours[wdOf(date)]; return { date, wd: wdOf(date), cap: hh.min, start: hh.start, wins: hh.wins, items: [], load: 0 }; });
+      const look = Math.max(n, LOOK);
+      const horizonEnd = addDays(today, look - 1);
+      const days = Array.from({ length: look }, (_, i) => { const date = addDays(today, i); return { date, wd: wdOf(date), items: [], load: 0 }; });
       const byDate = Object.fromEntries(days.map((d) => [d.date, d]));
-      const rank = (c) => (c.forced ? 0 : c.prio === 'high' ? 1 : c.type === 'chore' || c.due ? 2 : 3);
-      const cand = ((opts && opts.cand) || candidates(home, today, horizonEnd)).sort((a, b) => rank(a) - rank(b) || (a.hi < b.hi ? -1 : a.hi > b.hi ? 1 : 0) || b.minutes - a.minutes);
+      const rank = (c) => (c.forced ? 0 : c.prio === 'high' ? 1 : 2);
+      const cand = ((opts && opts.cand) || candidates(home, today, horizonEnd)).sort((a, b) => rank(a) - rank(b) || ((a.hi < a.lo ? 0 : diff(a.hi, a.lo)) - (b.hi < b.lo ? 0 : diff(b.hi, b.lo))) || b.minutes - a.minutes || (a.key < b.key ? -1 : 1));
       const unplaced = []; const waiting = []; const placedAt = {};
       const lookup = (key) => (/^c:/.test(key) ? (home.chores || []).find((x) => 'c:' + x.id === key) : (home.tasks || []).find((x) => 't:' + x.id === key));
+      const dueSoon = (c) => c.due || c.lo;
       const placeOne = (c) => {
         if (c.after && !/#/.test(c.key)) {
           if (placedAt[c.after] != null) { if (placedAt[c.after] > c.lo) c.lo = placedAt[c.after]; if (c.lo > c.hi) { waiting.push(c); return; } }
@@ -1009,39 +1002,27 @@
         let best = null;
         for (let d = c.lo; d <= c.hi; d = addDays(d, 1)) {
           const day = byDate[d]; if (!day) continue;
-          const after = day.load + c.minutes;
-          const over = after > day.cap;
-          if (over && !c.forced) continue;
-          let score = after / Math.max(day.cap, 30);
-          if (day.cap === 0) score += 5;
-          if (over) score += 3;                                            // обов'язкове лізе в день лише якщо інакше нікуди
-          if (c.type === 'chore') score += Math.abs(diff(d, c.due)) * 0.12;
-          else if (!c.due) score += diff(d, today) * 0.03;
-          if (c.room && day.items.some((x) => x.room === c.room)) score -= 0.35;   // прибирання кімнати разом
+          let score = day.load + c.minutes;                                  // чим менше навантаження в дні, тим краще
+          score += Math.abs(diff(d, dueSoon(c))) * 2;                        // але не ближче до далекого строку без потреби
+          if (c.room && day.items.some((x) => x.room === c.room)) score -= 6;   // прибирання кімнати разом
           if (!best || score < best.score) best = { day, score };
         }
         if (best) { best.day.items.push({ ...c, date: best.day.date }); best.day.load += c.minutes; if (!/#/.test(c.key)) placedAt[c.key] = best.day.date; } else unplaced.push(c);
       };
       cand.filter((c) => !c.after).forEach(placeOne);
       cand.filter((c) => c.after).forEach(placeOne);
-      // вирівнювання: переносимо справи з перевантажених днів на легші, у межах дозволеного вікна (від lo до hi).
-      // Якщо «заповнювати вільний час» увімкнено, справу можна поставити й раніше, але не більш ніж за 4 дні до строку.
-      const fillOn = home.fill !== false;
-      const ratio = (d, extra) => (d.cap > 0 ? (d.load + (extra || 0)) / d.cap : d.load > 0 ? 99 : 0);
-      for (let guard = 0; guard < 400; guard++) {
+      // вирівнювання: переносимо справи з важчих днів на легші в межах вікна
+      const dependedOn = new Set(cand.filter((c) => c.after).map((c) => c.after));
+      for (let guard = 0; guard < 600; guard++) {
         let best = null;
         for (const src of days) {
-          const rs = ratio(src); if (rs <= 0) continue;
+          if (src.load <= 0) continue;
           for (const it of src.items) {
-            if (it.forced || it.fixed || it.after || /#/.test(it.key)) continue;
+            if (it.fixed || it.after || dependedOn.has(it.key) || (it.forced && it.lo === it.hi)) continue;
             for (const tgt of days) {
-              if (tgt === src || tgt.cap <= 0 || tgt.load + it.minutes > tgt.cap) continue;
-              const okWin = tgt.date >= it.lo && tgt.date <= it.hi;
-              const okEarly = fillOn && tgt.date < src.date && diff(it.due || src.date, tgt.date) <= 4;
-              if (!okWin && !okEarly) continue;
-              const rt = ratio(tgt, it.minutes);
-              const gain = rs - rt;                       // скільки виграємо у вирівнюванні
-              if (gain <= 0.05) continue;
+              if (tgt === src || tgt.date < it.lo || tgt.date > it.hi) continue;
+              const gain = src.load - (tgt.load + it.minutes);      // > 0: після переносу в цільовому дні все одно легше, ніж було в початковому
+              if (gain <= 0) continue;
               if (!best || gain > best.gain) best = { src, tgt, it, gain };
             }
           }
@@ -1054,6 +1035,8 @@
       const roomIdx = (id) => { const i = (home.rooms || []).findIndex((r) => r.id === id); return i < 0 ? 99 : i; };
       for (const day of days) {
         day.items.sort((a, b) => {
+          const fa = a.overdue ? 0 : 1; const fb = b.overdue ? 0 : 1;
+          if (fa !== fb) return fa - fb;
           const ta = a.type === 'task' && !a.room ? 0 : 1; const tb = b.type === 'task' && !b.room ? 0 : 1;
           if (ta !== tb) return ta - tb;
           if (ta === 0) return (a.prio === 'high' ? 0 : 1) - (b.prio === 'high' ? 0 : 1) || a.minutes - b.minutes;
@@ -1063,74 +1046,47 @@
           if (!it.after) continue; const ai = day.items.findIndex((x) => x.key === it.after); const bi = day.items.indexOf(it);
           if (ai >= 0 && bi < ai) { day.items.splice(bi, 1); day.items.splice(day.items.findIndex((x) => x.key === it.after) + 1, 0, it); }
         }
-        let wi = 0; let t = day.wins.length ? day.wins[0][0] : 18 * 60;
-        for (const it of day.items) {
-          while (wi < day.wins.length - 1 && t + it.minutes > day.wins[wi][1]) { wi++; t = day.wins[wi][0]; }
-          it.startMin = t; it.endMin = t + it.minutes; t += it.minutes;
-        }
+        let t = 18 * 60;      // умовний час для календаря (.ics); в інтерфейсі години не показуємо
+        for (const it of day.items) { it.startMin = Math.min(t, 23 * 60); it.endMin = Math.min(t + it.minutes, 24 * 60 - 1); t += it.minutes; }
       }
-      return { days, unplaced, waiting };
+      return { days: days.slice(0, n), unplaced, waiting };
     }
 
-    // розподіл між кількома людьми: явні виконавці лишаються, решту ділимо за вільним часом кожного, кімнату прибирає одна людина
+    // кілька людей: явні виконавці лишаються, решта ділиться порівну за часом; далі кожен розкладає свої справи по днях
     function planWeek(home, today, opts) {
       const people = peopleOf(home);
       if (people.length < 2) return planOne(home, today, opts);
-      const n = (opts && opts.days) || 7; const horizonEnd = addDays(today, n - 1);
+      const n = (opts && opts.days) || 7; const horizonEnd = addDays(today, Math.max(n, LOOK) - 1);
       const cand = candidates(home, today, horizonEnd);
-      const hrs = {}; const week = {}; const load = {};
-      people.forEach((p) => { hrs[p] = hoursFor(home, p); week[p] = hrs[p].reduce((s2, x) => s2 + x.min, 0); load[p] = 0; });
       const nm = (x) => String(x || '').trim().toLowerCase();
       const byName = {}; people.forEach((p) => { byName[nm(p)] = p; });
-      const base = (c) => c.key.replace(/#.*$/, '');
+      const load = {}; people.forEach((p) => { load[p] = 0; });
       const owner = new Map(); const explicit = new Set();
-      for (const c of cand) { const p = byName[nm(c.who)]; if (p) { owner.set(base(c), p); explicit.add(base(c)); } if (owner.has(base(c))) load[owner.get(base(c))] += c.minutes; }
-      const pick = (m) => people.slice().sort((a, b) => ((load[a] + m) / (week[a] || 1) + (week[a] ? 0 : 100)) - ((load[b] + m) / (week[b] || 1) + (week[b] ? 0 : 100)))[0];
-      // розподіл за вільним часом кожного: частка справ пропорційна його часу за тиждень, а справа обов'язково іде тому, кому вона вміщується в день виконання (вихідний = часу немає)
-      const dates = Array.from({ length: n }, (_, i) => addDays(today, i));
-      const slack = {}; people.forEach((p) => { slack[p] = {}; dates.forEach((d) => { slack[p][d] = hrs[p][wdOf(d)].min; }); });
-      const dayPick = (p, c) => {          // найменш завантажений день у вікні справи для людини p, і чи вміщається справа
-        let best = null;
-        for (const d of dates) {
-          if (d < c.lo || d > c.hi) continue;
-          const cap = hrs[p][wdOf(d)].min; const used = cap - slack[p][d];
-          const ratio = cap > 0 ? (used + c.minutes) / cap : 99;
-          if (!best || ratio < best.ratio) best = { d, ratio, fits: cap > 0 && slack[p][d] >= c.minutes };
-        }
-        return best;
-      };
-      for (const c of cand) { const p = owner.get(base(c)); if (p && !/#/.test(c.key)) { const b = dayPick(p, c); if (b) slack[p][b.d] -= c.minutes; } }   // закріплені займають свій час
-      const free = cand.filter((c) => !owner.has(base(c)) && !c.after && !/#/.test(c.key))
-        .sort((a, b) => (b.forced ? 1 : 0) - (a.forced ? 1 : 0) || (a.hi < b.hi ? -1 : a.hi > b.hi ? 1 : 0) || b.minutes - a.minutes);
+      for (const c of cand) { const p = byName[nm(c.who)]; if (p) { owner.set(c.key, p); explicit.add(c.key); load[p] += c.minutes; } }
+      const free = cand.filter((c) => !owner.has(c.key) && !c.after)
+        .sort((a, b) => b.minutes - a.minutes || (a.lo < b.lo ? -1 : a.lo > b.lo ? 1 : 0) || (a.key < b.key ? -1 : 1));
       for (const c of free) {
-        if (owner.has(base(c))) continue;
-        let pk = null;
-        for (const p of people) {
-          const b = dayPick(p, c);
-          const wk = (load[p] + c.minutes) / (week[p] || 1) + (week[p] ? 0 : 100);
-          const score = (b && b.fits ? 0 : 10) + wk;
-          if (!pk || score < pk.score) pk = { p, score, b };
-        }
-        owner.set(base(c), pk.p); load[pk.p] += c.minutes; if (pk.b) slack[pk.p][pk.b.d] -= c.minutes;
+        const p = people.slice().sort((a, b) => load[a] - load[b])[0];
+        owner.set(c.key, p); load[p] += c.minutes;
       }
-      for (const c of cand) {   // залежні справи йдуть до того, хто робить попередню
-        if (owner.has(base(c))) continue;
-        const p = owner.get(c.after) || pick(c.minutes); load[p] += c.minutes; owner.set(base(c), p);
+      for (const c of cand) {       // залежні справи йдуть до того, хто робить попередню
+        if (owner.has(c.key)) continue;
+        const p = owner.get(c.after) || people.slice().sort((a, b) => load[a] - load[b])[0];
+        owner.set(c.key, p); load[p] += c.minutes;
       }
       const per = {};
       people.forEach((p) => {
-        const mine = cand.filter((c) => owner.get(base(c)) === p).map((c) => ({ ...c, who: p, auto: !explicit.has(base(c)) }));
-        per[p] = planOne(home, today, { ...opts, hours: hrs[p], cand: mine });
+        const mine = cand.filter((c) => owner.get(c.key) === p).map((c) => ({ ...c, who: p, auto: !explicit.has(c.key) }));
+        per[p] = planOne(home, today, { ...opts, cand: mine });
       });
       const days = per[people[0]].days.map((d, i) => {
-        const items = []; const caps = {}; const loads = {}; let cap = 0; let ld = 0;
-        people.forEach((p) => { const dd = per[p].days[i]; caps[p] = dd.cap; loads[p] = dd.load; cap += dd.cap; ld += dd.load; items.push(...dd.items); });
-        items.sort((a, b) => a.startMin - b.startMin);
-        return { date: d.date, wd: d.wd, cap, load: ld, caps, loads, items };
+        const items = []; const loads = {}; let ld = 0;
+        people.forEach((p) => { const dd = per[p].days[i]; loads[p] = dd.load; ld += dd.load; items.push(...dd.items); });
+        return { date: d.date, wd: d.wd, load: ld, loads, items };
       });
       return { days, unplaced: people.flatMap((p) => per[p].unplaced), waiting: people.flatMap((p) => per[p].waiting), people, per };
     }
-    root.DuckyPlan = { planWeek, localISO, addDays, wdOf, diff, hoursOf, hoursFrom, hoursFor, peopleOf, fmtHM, DEF_HOURS, stepOf };
+    root.DuckyPlan = { planWeek, localISO, addDays, wdOf, diff, peopleOf, fmtHM, stepOf };
   })(typeof window !== 'undefined' ? window : globalThis);
 
   // ---------- ДІМ: прибирання, задачі й розклад на день ----------
@@ -1139,6 +1095,9 @@
   (function homeMerge(root) {
     const COLS = ['rooms', 'chores', 'tasks'];
     const hashOf = (x) => { const c = {}; for (const k of Object.keys(x)) if (k !== 'mt' && k !== 'mh') c[k] = x[k]; const t = JSON.stringify(c); let n = 5381; for (let i = 0; i < t.length; i++) n = ((n * 33) ^ t.charCodeAt(i)) >>> 0; return n.toString(36) + t.length; };
+    // порожні пріоритети ніколи не вважаються «зміною»: інакше порожній стан, створений на іншому пристрої, перезаписував введене
+    const priHas = (p) => !!p && !!(p.goal || (Array.isArray(p.t) && p.t.some((x) => x && x.t)));
+    const priNorm = (p) => (priHas(p) ? p : null);
     const settingsOf = (hm) => JSON.stringify([hm.hours || [], hm.fill !== false]);
     function stamp(hm, now) {
       if (!hm || typeof hm !== 'object') return;
@@ -1156,7 +1115,7 @@
       hm.known = cur;
       const sg = settingsOf(hm); if (hm.sh !== sg) { const first = hm.sh === undefined && sg === '[[],true]'; hm.sh = sg; if (!first) hm.smt = now; }
       // люди та їхні графіки: кожен графік зливається окремо, за часом зміни
-      const prj = JSON.stringify(hm.pri || null); if (hm.prh !== prj) { const first = hm.prh === undefined && prj === 'null'; hm.prh = prj; if (!first) hm.prmt = now; }
+      const prj = JSON.stringify(priNorm(hm.pri)); if (hm.prh !== prj) { const first = hm.prh === undefined && prj === 'null'; hm.prh = prj; if (!first) hm.prmt = now; }
       const pj = JSON.stringify(hm.people || []); if (hm.pph !== pj) { const first = hm.pph === undefined && pj === '[]'; hm.pph = pj; if (!first) hm.pmt = now; }
       if (hm.hoursBy && typeof hm.hoursBy === 'object') {
         if (!hm.hbh) hm.hbh = {}; if (!hm.hbm) hm.hbm = {};
@@ -1195,7 +1154,15 @@
       for (const key of Object.keys(lg)) if (lg[key][0] === 1) { const i = key.indexOf('|'); (log[key.slice(0, i)] || (log[key.slice(0, i)] = [])).push(key.slice(i + 1)); }
       out.log = log;
       out.hist = { ...(R.hist || {}), ...(L.hist || {}) };
-      if ((R.prmt || 0) > (L.prmt || 0)) { out.pri = R.pri; out.prmt = R.prmt; out.prh = R.prh; }
+      {   // пріоритети: новіший тиждень, далі той, де щось введено, далі новіший за часом
+        const a = L.pri; const b = R.pri; const wa = (a && a.wk) || ''; const wb = (b && b.wk) || '';
+        let takeR;
+        if (wa !== wb) takeR = wb > wa;
+        else if (priHas(a) !== priHas(b)) takeR = priHas(b);
+        else takeR = (R.prmt || 0) > (L.prmt || 0);
+        if (takeR) { out.pri = R.pri; out.prmt = R.prmt; out.prh = R.prh; }
+      }
+      out.past = { ...(R.past || {}), ...(L.past || {}) };
       if ((R.pmt || 0) > (L.pmt || 0)) { out.people = R.people; out.pmt = R.pmt; out.pph = R.pph; }
       const hb = { ...(R.hoursBy || {}) }; const hbm = { ...(R.hbm || {}) }; const hbh = { ...(R.hbh || {}) };
       for (const nme of Object.keys(L.hoursBy || {})) { if (!(nme in hb) || ((L.hbm || {})[nme] || 0) >= (hbm[nme] || 0)) { hb[nme] = L.hoursBy[nme]; hbm[nme] = (L.hbm || {})[nme] || 0; hbh[nme] = (L.hbh || {})[nme]; } }
@@ -1245,7 +1212,7 @@
   (function homeMode() {
     const P = window.DuckyPlan;
     const MODE_KEY = 'ducky.mode';
-    const HOME_TABS = [['h_today', 'Сьогодні'], ['h_week', 'Розклад'], ['h_clean', 'Прибирання'], ['h_tasks', 'Задачі'], ['h_stats', 'Успіхи'], ['h_time', 'Мій час']];
+    const HOME_TABS = [['h_today', 'Сьогодні'], ['h_week', 'Розклад'], ['h_clean', 'Прибирання'], ['h_tasks', 'Задачі'], ['h_stats', 'Успіхи'], ['h_time', 'Опції']];
     const KITCHEN_TABS = TABS.slice();
     let kTab = 'pantry'; let hTab = 'h_today';
     const isHome = () => store.get(MODE_KEY) === 'home';
@@ -1284,11 +1251,7 @@
       const mine = !i.who || lc(i.who) === lc(meName()); return v === 'me' ? mine : !mine;
     };
     const othersLabel = () => { const o = people().filter((x) => x !== meName()); return o.length ? o.join(', ') : 'Інші'; };
-    const capView = (caps, total) => {
-      if (!multi() || !caps) return total; const v = viewWho(); const me = meName();
-      if (v === 'me') return caps[me]; if (v === 'other') return Object.keys(caps).filter((k) => k !== me).reduce((s2, k) => s2 + caps[k], 0); return total;
-    };
-    const whoBar = () => !multi() ? null : h('div', { class: 'toolbar', style: 'margin:12px 0;align-items:center' }, h('span', { class: 'mute' }, 'Показати:'),
+    const whoBar = () => !multi() ? null : h('div', { class: 'toolbar who-bar', style: 'margin:10px 0 14px;align-items:center' }, h('span', { class: 'mute who-lbl' }, 'Показати:'),
       [['me', 'Мої'], ['other', othersLabel()], ['all', 'Усі разом']].map(([k, t]) => h('button', { class: viewWho() === k ? 'primary' : 'ghost', type: 'button', onclick: () => { store.set(VW_KEY, k); render(); } }, t)));
     const meAsk = () => !multi() || meKnown() ? null : h('div', { class: 'card', style: 'margin-bottom:20px' }, h('div', { class: 'tag' }, 'Хто ти?'),
       h('p', { class: 'mute', style: 'margin:6px 0 10px' }, 'Обери своє імʼя, щоб бачити свої справи й свій графік.'),
@@ -1304,43 +1267,69 @@
     const PRIO = [['high', 'Висока'], ['norm', 'Звичайна'], ['low', 'Низька']];
 
     // ----- знімок плану на сьогодні: щоб список не стрибав, коли відмічаєш справи -----
-    const sigOf = (hm) => JSON.stringify([hm.rooms.map((r) => [r.id, r.name]), hm.chores.map((c) => [c.id, c.who, c.after, c.title, c.room, c.every, c.minutes, c.must, c.wd, c.snooze, c.pin]),
-      [hm.fill, hm.rooms.length], hm.tasks.map((t) => [t.id, t.who, t.after, t.title, t.due, t.minutes, t.prio, t.room, t.snooze, t.every, t.wd, t.pin, (t.subs || []).length]), hm.hours, hm.people || [], hm.hoursBy || {}]);
+    const sigOf = (hm) => JSON.stringify([hm.rooms.map((r) => [r.id, r.name]), hm.chores.map((c) => [c.id, c.who, c.who_once, c.after, c.title, c.room, c.every, c.minutes, c.must, c.wd, c.snooze, c.pin, c.carry]),
+      hm.rooms.length, hm.tasks.map((t) => [t.id, t.who, t.who_once, t.after, t.title, t.due, t.minutes, t.prio, t.room, t.snooze, t.every, t.wd, t.pin, t.carry, (t.subs || []).length]), hm.people || []]);
     const slim = (i) => ({ who: i.who, auto: i.auto, key: i.key, type: i.type, id: i.id, title: i.title, room: i.room, minutes: i.minutes, must: i.must, overdue: i.overdue, due: i.due, startMin: i.startMin, endMin: i.endMin });
+    // день закінчився: зберігаємо його список (щоб можна було переглянути й відмітити забуте), а незроблене переходить на сьогодні
+    function archiveSnap(hm, today) {
+      const old = hm.snap; if (!old || !old.date || old.date >= today) return;
+      if (!hm.past || typeof hm.past !== 'object') hm.past = {};
+      const doneKeys = hm.log[old.date] || [];
+      if (!hm.past[old.date]) hm.past[old.date] = (old.items || []).map((i) => ({ key: i.key, type: i.type, id: i.id, title: i.title, room: i.room || null, minutes: i.minutes, who: i.who || '' }));
+      for (const i of old.items || []) {
+        if (doneKeys.includes(i.key) || /#/.test(i.key)) continue;
+        const x = i.type === 'chore' ? hm.chores.find((c) => c.id === i.id) : hm.tasks.find((t) => t.id === i.id);
+        if (!x || x.done) continue;
+        if (x.last && x.last >= old.date) continue;
+        if (!x.carry || x.carry < old.date) x.carry = old.date;
+        if (multi() && i.who && !x.who && !x.who_once) x.who_once = i.who;     // незроблене лишається за тим самим, поки не зроблять або не передадуть
+      }
+      for (const d of Object.keys(hm.past)) if (d < P.addDays(today, -21)) delete hm.past[d];
+    }
     function todaySnap() {
       const hm = HM(); const today = todayD(); const sig = sigOf(hm);
-      if (!hm.snap || hm.snap.date !== today || hm.snap.sig !== sig) {
+      if (hm.snap && hm.snap.date && hm.snap.date < today) { archiveSnap(hm, today); hm.snap = null; }
+      if (!hm.snap || hm.snap.date !== today || hm.snap.sig !== sigOf(hm)) {
         const same = hm.snap && hm.snap.date === today;
         const doneKeys = same ? (hm.log[today] || []) : [];
         const keep = same ? hm.snap.items.filter((i) => doneKeys.includes(i.key)) : [];
-        // коли щось уже зроблено, вільний час не добираємо справами з наступних днів, щоб на місце зробленої не зʼявлялась нова
-        const plan = P.planWeek(keep.length ? { ...hm, fill: false } : hm, today).days[0];
+        const plan = P.planWeek(hm, today).days[0];
         const fresh = plan.items.filter((i) => !keep.some((k) => k.key === i.key)).map(slim);
         const items = keep.concat(fresh);
-        hm.snap = { date: today, sig, items, cap: plan.cap, caps: plan.caps || null };
+        hm.snap = { date: today, sig: sigOf(hm), items };
         for (const d of Object.keys(hm.log)) if (d < P.addDays(today, -20)) delete hm.log[d];
         save();
       }
       return hm.snap;
     }
-    function tick(item, on) {
-      const hm = HM(); const today = todayD();
-      const log = hm.log[today] || (hm.log[today] = []);
+    // відмітити справу зробленою в день date (сьогодні або минулий)
+    function markDone(item, on, date) {
+      const hm = HM(); const log = hm.log[date] || (hm.log[date] = []);
       if (item.type === 'chore') {
         const c = hm.chores.find((x) => x.id === item.id);
-        if (c) { if (on) { c.prevLast = c.last || null; c.last = today; } else { c.last = c.prevLast || null; } }
+        if (c) { if (on) { if (!c.last || c.last < date) { c.prevLast = c.last || null; c.last = date; } delete c.who_once; delete c.carry; } else if (c.last === date) { c.last = c.prevLast || null; } }
       } else {
         const t = hm.tasks.find((x) => x.id === item.id);
-        if (t && Number(t.every) > 0) { if (on) { t.prevLast = t.last || null; t.last = today; (t.subs || []).forEach((x) => { x.done = false; }); } else t.last = t.prevLast || null; } else if (t) t.done = on;
+        if (t && Number(t.every) > 0) { if (on) { if (!t.last || t.last < date) { t.prevLast = t.last || null; t.last = date; } (t.subs || []).forEach((x) => { x.done = false; }); delete t.who_once; delete t.carry; } else if (t.last === date) t.last = t.prevLast || null; }
+        else if (t) { t.done = on; if (on) delete t.carry; }
       }
       const i = log.indexOf(item.key);
       if (on && i < 0) log.push(item.key); if (!on && i >= 0) log.splice(i, 1);
+    }
+    function tick(item, on) {
+      markDone(item, on, todayD());
       save(); render(); setTimeout(() => { pushSync(false); }, 300); if (on) praiseCheck();
+    }
+    function tickPast(item, on, date) {
+      markDone(item, on, date);
+      const hm = HM(); const list = (hm.past && hm.past[date]) || []; const doneKeys = hm.log[date] || [];
+      if (hm.hist && hm.hist[date]) hm.hist[date].d = list.filter((i) => doneKeys.includes(i.key)).length;
+      save(); render(); X.toast(on ? 'Відмічено за ' + dayName(date) + ': ' + item.title : 'Знято відмітку: ' + item.title);
     }
     function postpone(item) {
       const hm = HM(); const tomorrow = P.addDays(todayD(), 1);
       const x = item.type === 'chore' ? hm.chores.find((c) => c.id === item.id) : hm.tasks.find((t) => t.id === item.id);
-      if (x) x.snooze = tomorrow;
+      if (x) { x.snooze = tomorrow; delete x.carry; delete x.pin; }
       save(); render(); X.toast('Перенесено на завтра: ' + item.title);
     }
 
@@ -1352,28 +1341,9 @@
       const x = findSrc(item);
       if (!x) return;
       const from = item.date || null;
-      x.pin = date; delete x.snooze;
-      let filled = null;
-      if (from && from !== date && from > todayD() && !(opts && opts.noFill)) filled = autoFill(from, item.who, item.key);
+      x.pin = date; delete x.snooze; delete x.carry;
       save(); render();
-      X.toast('Перенесено: ' + item.title + ' → ' + (date === todayD() ? 'сьогодні' : dayName(date)) + (filled ? '. На ' + dayName(from) + ' поставила: ' + filled : ''));
-    }
-    // день звільнився (справу перенесли): ставимо на його місце найближчу справу, якщо в людини день став порожнім
-    function autoFill(date, who, skipKey) {
-      const hm = HM(); if (hm.fill === false) return null;
-      const plan = P.planWeek(hm, todayD(), { days: 21 });
-      const d = plan.days.find((x) => x.date === date); if (!d) return null;
-      const w = multi() && who ? who : null;
-      const mine = (i) => !w || lc(i.who) === lc(w);
-      const load = w && d.loads ? (d.loads[w] || 0) : d.load; const cap = w && d.caps ? (d.caps[w] || 0) : d.cap;
-      if (cap <= 0 || load > 0) return null;
-      const pool = [];
-      for (const day of plan.days) if (day.date > date) for (const i of day.items) if (mine(i) && i.key !== skipKey && !/#/.test(i.key) && !i.after && !i.fixed && !i.must && i.minutes <= cap) pool.push({ i, when: day.date });
-      pool.sort((a, b) => (a.when < b.when ? -1 : a.when > b.when ? 1 : 0) || b.i.minutes - a.i.minutes);
-      const pick = pool[0]; if (!pick) return null;
-      const y = findSrc(pick.i); if (!y) return null;
-      y.pin = date; delete y.snooze;
-      return pick.i.title;
+      X.toast('Перенесено: ' + item.title + ' → ' + (date === todayD() ? 'сьогодні' : dayName(date)));
     }
     function movePicker(item) {
       let closeFn = null; const today = todayD();
@@ -1397,8 +1367,9 @@
       const pickOne = (r) => {
         closeFn();
         const y = findSrc(r.i); const x = findSrc(item); if (!x || !y) return;
-        y.pin = date; delete y.snooze;
+        y.pin = date; delete y.snooze; delete y.carry;
         if (item.who && lc(y.who) !== lc(item.who) && multi()) y.who = item.who;
+        delete x.carry;
         if (r.when && r.when !== date) x.pin = r.when; else { delete x.pin; x.snooze = P.addDays(date, 1); }
         save(); render();
         X.toast('Замінила «' + item.title + '» на «' + r.i.title + '» · ' + (date === today ? 'сьогодні' : dayName(date)));
@@ -1408,9 +1379,24 @@
       closeFn = X.openModal('Замінити: ' + item.title, h('div', { class: 'sheet' }, body));
     }
     // натиснули на справу: перенести, замінити або відкласти
+    // передати справу іншій людині (лише цього разу або назавжди)
+    function handoff(item, name, forever) {
+      const x = findSrc(item); if (!x) return;
+      const repeating = item.type === 'chore' || Number(x.every) > 0;
+      if (name === null) { delete x.who_once; x.who = ''; }
+      else if (repeating && !forever) x.who_once = name;
+      else { x.who = name; delete x.who_once; }
+      save(); render();
+      X.toast(name === null ? 'Розподілю сама: ' + item.title : 'Передано: ' + item.title + ' → ' + name + (repeating && !forever ? ' (цього разу)' : ''));
+    }
     function itemMenu(item) {
       let closeFn = null; const go = (fn) => () => { closeFn(); fn(); };
+      const others = multi() ? people().filter((n) => lc(n) !== lc(item.who || meName())) : [];
+      const src = findSrc(item); const repeating = !!src && (item.type === 'chore' || Number(src.every) > 0);
       closeFn = X.openModal(item.title, h('div', { class: 'sheet' },
+        ...others.map((n) => h('button', { class: 'sheet-item', type: 'button', onclick: go(() => handoff(item, n, false)) }, 'Передати: ' + n + (repeating ? ' (цього разу)' : ''))),
+        ...(repeating ? others.map((n) => h('button', { class: 'sheet-item', type: 'button', onclick: go(() => handoff(item, n, true)) }, 'Передати: ' + n + ' назавжди')) : []),
+        src && multi() && (src.who || src.who_once) ? h('button', { class: 'sheet-item', type: 'button', onclick: go(() => handoff(item, null, true)) }, 'Прибрати закріплення за людиною') : null,
         h('button', { class: 'sheet-item', type: 'button', onclick: go(() => replacePicker(item)) }, 'Замінити іншою справою'),
         h('button', { class: 'sheet-item', type: 'button', onclick: go(() => movePicker(item)) }, 'Перенести на інший день'),
         h('button', { class: 'sheet-item', type: 'button', onclick: go(() => postpone(item)) }, 'Відкласти на завтра')));
@@ -1420,8 +1406,7 @@
       return h('label', { class: 'shop-row h-row' + (dn ? ' done' : '') },
         h('input', { type: 'checkbox', checked: dn ? true : null, disabled: opts && opts.readonly ? true : null, onchange: (e) => tick(i, e.target.checked) }),
         h('span', { class: 'shop-n' }, i.title,
-          h('span', { class: 'mute' }, [subs && ' · ' + subs.filter((s) => s.done).length + '/' + subs.length, rn && ' · ' + rn, i.who && ' · ' + i.who + (multi() && i.auto === false ? ' (закріплено)' : ''), i.must && ' · обовʼязково', i.overdue && ' · прострочено'].filter(Boolean).join(''))),
-        h('span', { class: 'tag h-time' }, P.fmtHM(i.startMin) + '–' + P.fmtHM(i.endMin)),
+          h('span', { class: 'mute' }, [subs && ' · ' + subs.filter((s) => s.done).length + '/' + subs.length, rn && ' · ' + rn, multi() && i.who && ' · ' + i.who, (i.overdue ? ' · з минулого' : i.must ? ' · обовʼязково' : '')].filter(Boolean).join(''))),
         h('span', { class: 'mute shop-p' }, mins(i.minutes)),
         opts && opts.readonly ? null : h('button', { class: 'link shop-x', type: 'button', title: 'Перенести або замінити', 'aria-label': 'Змінити: ' + i.title,
           onclick: (e) => { e.preventDefault(); e.stopPropagation(); itemMenu(i); } }, 'змінити'));
@@ -1446,22 +1431,6 @@
       }
       return n;
     }
-    function freeTimeCard(snap, plan) {
-      const hm = HM(); const out = h('div', { style: 'margin-top:12px' });
-      const inp = h('input', { type: 'number', min: 1, max: 240, value: 15, 'aria-label': 'Скільки хвилин вільно', style: 'width:90px' });
-      const go = () => {
-        const n = Math.max(1, Number(inp.value) || 15);
-        const pool = snap.items.filter((i) => !isDoneNow(i)).map((i) => ({ ...i, when: todayD() }));
-        for (let k = 1; k < 4; k++) if (plan.days[k]) for (const i of plan.days[k].items) pool.push({ ...i, when: plan.days[k].date });
-        const fit = pool.filter((i) => i.minutes <= n).sort((a, b) => (isMustItem(b) - isMustItem(a)) || (a.when < b.when ? -1 : a.when > b.when ? 1 : 0) || b.minutes - a.minutes).slice(0, 3);
-        out.replaceChildren(...(fit.length ? fit.map((i) => h('div', { class: 'chore-row' },
-          h('div', { class: 'chore-main' }, h('div', {}, i.title), h('div', { class: 'mute' }, mins(i.minutes) + ' · ' + (i.when === todayD() ? 'у плані на сьогодні' : 'планувалось ' + dayName(i.when)))),
-          h('button', { class: 'ghost', type: 'button', onclick: () => { if (i.when === todayD()) tick(i, true); else setPin(i, todayD()); } }, i.when === todayD() ? 'Зроблено' : 'Взяти на сьогодні')))
-          : [h('p', { class: 'mute', style: 'margin:6px 0' }, 'Нічого не вміщається в ' + n + ' хв. Спробуй більше часу.')]));
-      };
-      return h('div', { class: 'card', style: 'margin-top:20px' }, h('div', { class: 'tag' }, 'Є вільний час?'),
-        h('div', { class: 'toolbar', style: 'margin-top:8px;align-items:center' }, inp, h('span', { class: 'mute' }, 'хв'), h('button', { class: 'ghost', type: 'button', onclick: go }, 'Підібрати справу')), out);
-    }
     // «Можу ще»: коли все зроблено, беремо на сьогодні справи з найближчих днів
     function moreCard(plan, snap) {
       const out = h('p', { class: 'note', role: 'status', style: 'margin:8px 0 0' });
@@ -1480,8 +1449,37 @@
         h('p', { class: 'mute', style: 'margin:6px 0 10px' }, pool.length ? 'Усе на сьогодні зроблено. Є сили на більше? Візьму справи з найближчих днів.' : 'Усе на сьогодні зроблено, а в найближчі дні нічого не заплановано. Гарного відпочинку.'),
         pool.length ? h('div', { class: 'toolbar' }, [15, 30, 60].map((n) => h('button', { class: 'ghost', type: 'button', onclick: () => take(n) }, n === 60 ? 'Ще годину' : 'Ще ' + n + ' хв'))) : null, out);
     }
+    let dayBack = 0;      // 0 = сьогодні, 1 = вчора, ...
+    function dayStrip(today) {
+      const chips = Array.from({ length: 7 }, (_, k) => 6 - k).map((back) => {
+        const date = P.addDays(today, -back);
+        const label = back === 0 ? 'Сьогодні' : back === 1 ? 'Вчора' : new Date(date + 'T12:00:00').toLocaleDateString('uk-UA', { weekday: 'short', day: 'numeric' });
+        return h('button', { class: 'day-chip' + (dayBack === back ? ' on' : ''), type: 'button', 'aria-pressed': dayBack === back ? 'true' : 'false', onclick: () => { dayBack = back; render(); } }, label);
+      });
+      const strip = h('div', { class: 'day-strip', role: 'group', 'aria-label': 'День' }, chips);
+      setTimeout(() => { const on = strip.querySelector('.on'); if (on) strip.scrollLeft = on.offsetLeft - strip.clientWidth + on.offsetWidth + 16; }, 0);   // активний день завжди видно
+      return strip;
+    }
+    // минулий день: що було в плані й що не відмічено; відмітити можна й зараз
+    function viewPastDay(today) {
+      const hm = HM(); const date = P.addDays(today, -dayBack);
+      const list = ((hm.past && hm.past[date]) || []).filter(inView);
+      const doneKeys = hm.log[date] || [];
+      const open = list.filter((i) => !doneKeys.includes(i.key)); const dn = list.filter((i) => doneKeys.includes(i.key));
+      const row = (i, isDone) => h('label', { class: 'shop-row h-row' + (isDone ? ' done' : '') },
+        h('input', { type: 'checkbox', checked: isDone ? true : null, onchange: (e) => tickPast(i, e.target.checked, date) }),
+        h('span', { class: 'shop-n' }, i.title, h('span', { class: 'mute' }, [i.room && roomName(i.room) && ' · ' + roomName(i.room), multi() && i.who && ' · ' + i.who].filter(Boolean).join(''))),
+        h('span', { class: 'mute shop-p' }, mins(i.minutes)));
+      return [...header(dayName(date, true), dayBack === 1 ? 'Що було' : 'Що було', dayBack === 1 ? 'вчора' : 'тоді'), dayStrip(today), whoBar(),
+        list.length
+          ? h('div', { class: 'card' },
+            h('p', { class: 'mute', style: 'margin:0 0 10px' }, open.length ? 'Не відмічено: ' + open.length + '. Якщо зробила, познач, і справа врахується.' : 'Усе було зроблено.'),
+            h('div', {}, open.map((i) => row(i, false)), dn.map((i) => row(i, true))))
+          : h('p', { class: 'empty' }, 'Для цього дня списку немає. Він зберігається, коли застосунок відкрито в той день.')];
+    }
     function viewToday() {
       const hm = HM(); const today = todayD(); const snap = todaySnap();
+      if (dayBack > 0) return viewPastDay(today);
       const plan = P.planWeek(hm, today);
       const names = whoNames().filter((n) => snap.items.some((i) => i.who === n));
       if (whoFilter && !names.includes(whoFilter)) whoFilter = '';
@@ -1495,12 +1493,12 @@
         const keep = new Set(must.concat(extra).map((i) => i.key)); open = open0.filter((i) => keep.has(i.key));
       }
       const hidden = open0.length - open.length;
-      const total = snap.items.reduce((s, i) => s + i.minutes, 0); const doneMin = dn.reduce((s, i) => s + i.minutes, 0);
+      const total = vis.reduce((s, i) => s + i.minutes, 0); const doneMin = dn.reduce((s, i) => s + i.minutes, 0);
       const pct = total ? Math.round((doneMin / total) * 100) : 0;
       const empty = !hm.rooms.length && !hm.chores.length && !hm.tasks.length;
       // історія для серії
       const must = snap.items.filter(isMustItem);
-      const entry = { p: snap.items.length, d: dn.length, mp: must.length, md: must.filter(isDoneNow).length };
+      const entry = { p: snap.items.length, d: snap.items.filter(isDoneNow).length, mp: must.length, md: must.filter(isDoneNow).length };
       if (multi()) { const w = {}; snap.items.forEach((i) => { const k = i.who || '—'; const e2 = w[k] || (w[k] = [0, 0]); e2[0]++; if (isDoneNow(i)) e2[1]++; }); entry.w = w; }
       if (!hm.hist) hm.hist = {};
       const prev = hm.hist[today];
@@ -1508,28 +1506,21 @@
         hm.hist[today] = entry; for (const d of Object.keys(hm.hist)) if (d < P.addDays(today, -90)) delete hm.hist[d]; save();
       }
       const streak = streakInfo(hm, today);
-      return [...header('Дім · ' + dayName(today, true), 'Справи на', 'сьогодні'), meAsk(),
-        priCard(),
-        statsRow([['Залишилось справ', open0.length], ['Зроблено', dn.length], ['Серія днів поспіль', streak]]),
-        snap.items.length
+      const summary = !vis.length ? '' : open0.length === 0 ? 'Усе зроблено 🎉' : 'Лишилось ' + open0.length + ' з ' + vis.length + ' · ' + mins(total - doneMin) + (streak > 0 ? ' · серія ' + streak : '');
+      return [...header('Дім · ' + dayName(today, true), 'Справи на', 'сьогодні'), dayStrip(today), meAsk(), multi() ? whoBar() : null,
+        vis.length
           ? h('div', { class: 'card' },
             h('div', { class: 'h-prog', role: 'progressbar', 'aria-valuenow': pct, 'aria-valuemin': 0, 'aria-valuemax': 100 }, h('span', { style: 'width:' + pct + '%' })),
-            h('p', { class: 'mute', style: 'margin:8px 0 14px' }, snap.items.length === dn.length ? 'Усе зроблено. Можна відпочивати.' : (low ? 'Режим «мало сил»: лишилось найважливіше. ' : '') + 'План на сьогодні: ' + mins(total) + (capView(snap.caps, snap.cap) ? ', у графіку ' + mins(capView(snap.caps, snap.cap)) : '') + '.'),
-            multi() ? h('p', { class: 'note', style: 'margin:-6px 0 14px' }, people().map((n) => {
-              const mine = snap.items.filter((i) => lc(i.who) === lc(n)); const used = mine.reduce((s2, i) => s2 + i.minutes, 0); const cp = snap.caps && snap.caps[n];
-              return n + ': ' + (mine.length ? mins(used) : 'нічого') + (cp ? ' із ' + mins(cp) : '') + (cp && used > cp ? ' (більше, ніж вільного часу)' : '');
-            }).join(' · ')) : null,
+            h('p', { class: 'mute', style: 'margin:8px 0 12px' }, (low ? 'Мало сил: тільки найважливіше. ' : '') + summary),
             h('div', {}, open.map((i) => itemRow(i, false)), dn.map((i) => itemRow(i, true))),
-            hidden ? h('p', { class: 'note', style: 'margin:10px 0 0' }, 'Сховано ' + hidden + ' (залишаться в розкладі). Вимкни режим, щоб побачити все.') : null)
-          : h('p', { class: 'empty' }, empty ? 'Поки порожньо. Додай кімнати й справи у розділі «Прибирання» та задачі у «Задачі». Розклад складеться сам.' : 'На сьогодні нічого не заплановано. Гарного відпочинку.'),
-        multi() ? whoBar() : null,
+            hidden ? h('p', { class: 'note', style: 'margin:10px 0 0' }, 'Сховано ' + hidden + ' (лишаються в розкладі).') : null)
+          : h('p', { class: 'empty' }, empty ? 'Поки порожньо. Додай кімнати й справи у «Прибирання» та «Задачі», розклад складеться сам.' : 'На сьогодні нічого. Гарного відпочинку.'),
         !multi() && names.length > 1 ? h('div', { class: 'toolbar', style: 'margin-top:12px' }, h('span', { class: 'mute' }, 'Чиї справи:'), ['', ...names].map((n) => h('button', { class: n === whoFilter ? 'primary' : 'ghost', type: 'button', onclick: () => { whoFilter = n; render(); } }, n || 'Усі'))) : null,
+        snap.items.length && open0.length === 0 ? moreCard(plan, snap) : null,
         h('div', { class: 'toolbar', style: 'margin-top:16px' },
           h('button', { class: low ? 'primary' : 'ghost', type: 'button', onclick: () => { hm.low = low ? null : today; save(); render(); } }, low ? 'Показати все' : 'Мало сил'),
           h('button', { class: 'ghost', type: 'button', onclick: () => { hm.snap = null; save(); render(); X.toast('Розклад на сьогодні перераховано'); } }, 'Перепланувати')),
-        snap.items.length && open0.length === 0 ? moreCard(plan, snap) : null,
-        freeTimeCard(snap, plan),
-        h('p', { class: 'note' }, 'Справи між вами діляться так: закріплені за людиною лишаються за нею, решта розподіляється за вільним часом кожного (кімната може ділитись між вами). Кнопка «змінити» переносить справу або замінює її іншою. Обовʼязкові справи не відкладаються автоматично. Серія рахується за днями, коли ти відкривала застосунок і закрила все обовʼязкове.')];
+        priCard()];
     }
 
     // ----- Розклад на тиждень (справи можна перетягувати між днями) -----
@@ -1541,18 +1532,17 @@
       const rows = [...groups.values()].sort((a, b) => (b.must - a.must) || b.min - a.min);
       const total = rows.reduce((s, g) => s + g.min, 0);
       return h('details', { class: 'card unplaced', style: 'margin-top:16px' },
-        h('summary', {}, 'Не вмістилось у графік: ' + cases(list.length, ['справа', 'справи', 'справ']) + (total ? ' · ' + mins(total) : '')),
-        h('p', { class: 'mute', style: 'margin:8px 0' }, 'Ці справи чекають, поки зʼявиться вільний час. Збільш вікна в «Мій час» або зніми частину справ.'),
-        h('ul', { class: 'h-list' }, rows.map((g) => h('li', {}, h('span', { class: 'h-n' }, g.title, g.must ? h('span', { class: 'gold-t' }, ' ★') : null), h('span', { class: 'mute' }, (g.n > 1 ? '×' + g.n + ' · ' : '') + mins(g.min))))),
-        h('button', { class: 'link', type: 'button', onclick: () => { const b = [...document.querySelectorAll('nav button')].find((x) => /Мій час/.test(x.textContent)); if (b) b.click(); } }, 'Відкрити «Мій час»'));
+        h('summary', {}, 'Без дня: ' + cases(list.length, ['справа', 'справи', 'справ']) + (total ? ' · ' + mins(total) : '')),
+        h('p', { class: 'mute', style: 'margin:8px 0' }, 'Ці справи поки не мають дня (чекають на попередню справу чи на дату).'),
+        h('ul', { class: 'h-list' }, rows.map((g) => h('li', {}, h('span', { class: 'h-n' }, g.title, g.must ? h('span', { class: 'gold-t' }, ' ★') : null), h('span', { class: 'mute' }, (g.n > 1 ? '×' + g.n + ' · ' : '') + mins(g.min))))));
     }
     function viewWeek() {
       const hm = HM(); const today = todayD(); const snap = todaySnap();
       const plan = P.planWeek(hm, today);
       const days = plan.days.map((d, i) => {
-        const dd = i === 0 ? { ...d, items: snap.items, caps: snap.caps || d.caps } : d;
+        const dd = i === 0 ? { ...d, items: snap.items } : d;
         const items = dd.items.filter(inView);
-        return { ...dd, items, load: items.reduce((s, x) => s + x.minutes, 0), cap: capView(dd.caps, dd.cap) };
+        return { ...dd, items, load: items.reduce((s, x) => s + x.minutes, 0) };
       });
       let drag = null;
       return [...header('Дім · 7 днів', 'Розклад на', 'тиждень'), meAsk(), whoBar(),
@@ -1562,13 +1552,13 @@
             ondragleave: () => card.classList.remove('over'),
             ondrop: (e) => { e.preventDefault(); card.classList.remove('over'); if (drag && drag.date !== d.date) { const it = drag.item; drag = null; setPin(it, d.date); } } },
             h('div', { class: 'tag' }, i === 0 ? 'Сьогодні' : dayName(d.date)),
-            h('div', { class: 'mute' }, d.items.length ? cases(d.items.length, ['справа', 'справи', 'справ']) + ' · ' + mins(d.load) + (d.cap ? ' з ' + mins(d.cap) : ' · вихідний за графіком') : (d.cap ? 'Вільний день' : 'Вихідний за графіком')),
+            h('div', { class: 'mute' }, d.items.length ? cases(d.items.length, ['справа', 'справи', 'справ']) + ' · ' + mins(d.load) : 'Вільний день'),
             d.items.length ? h('ul', { class: 'h-list' }, d.items.map((x) => {
               const dn = i === 0 && isDoneNow(x);
               return h('li', { class: dn ? 'done' : '', draggable: dn ? null : 'true',
                 ondragstart: (e) => { drag = { item: x, date: d.date }; if (e.dataTransfer) { e.dataTransfer.setData('text/plain', x.key); e.dataTransfer.effectAllowed = 'move'; } },
                 ondragend: () => { drag = null; } },
-                h('span', { class: 'h-t' }, P.fmtHM(x.startMin)), h('span', { class: 'h-n', style: dn ? null : 'cursor:pointer', onclick: dn ? null : () => itemMenu(x) }, x.title, x.room ? h('span', { class: 'mute' }, ' · ' + roomName(x.room)) : null, x.must ? h('span', { class: 'gold-t' }, ' ★') : null, multi() && x.who ? h('span', { class: 'mute' }, ' · ' + x.who) : null),
+                h('span', { class: 'h-n', style: dn ? null : 'cursor:pointer', onclick: dn ? null : () => itemMenu(x) }, x.title, x.room ? h('span', { class: 'mute' }, ' · ' + roomName(x.room)) : null, x.must ? h('span', { class: 'gold-t' }, ' ★') : null, multi() && x.who ? h('span', { class: 'mute' }, ' · ' + x.who) : null),
                 dn ? null : h('button', { class: 'link h-mv', type: 'button', title: 'Перенести або замінити', 'aria-label': 'Змінити: ' + x.title, onclick: () => itemMenu(x) }, '⇄'));
             })) : null);
           return card;
@@ -1752,7 +1742,7 @@
       const have = new Set([...hm.chores.map((c) => key('c', c.title, c.room ? roomName(c.room) : '')), ...hm.tasks.map((t) => key('t', t.title, t.room ? roomName(t.room) : ''))]);
       const cand = [...(mine.chores || []).map((x) => ['c', x]), ...(mine.tasks || []).filter((t) => !t.done).map((x) => ['t', x])]
         .filter(([k, x]) => x && x.title && !have.has(key(k, x.title, x.room ? roomOf(x.room) : '')));
-      if (!cand.length) return h('div', { class: 'card', style: 'margin-top:20px' }, h('div', { class: 'tag' }, 'Зі своєї комори'), h('p', { class: 'mute', style: 'margin:6px 0 0' }, 'У «Моїй коморі» немає справ, яких тут ще нема.'));
+      if (!cand.length) return h('div', { class: 'card', style: 'margin-top:20px' }, h('div', { class: 'tag' }, 'Зі своєї комори'), h('p', { class: 'mute', style: 'margin:6px 0 0' }, 'Усе зі «Своєї комори» вже тут.'));
       const boxes = cand.map(([k, x]) => h('input', { type: 'checkbox' }));
       const go = () => {
         const picked = cand.filter((c, i) => boxes[i].checked); if (!picked.length) { X.toast('Познач, що скопіювати'); return; }
@@ -1769,10 +1759,11 @@
         save(); render(); X.toast('Скопійовано: ' + picked.length);
       };
       return h('div', { class: 'card', style: 'margin-top:20px' }, h('div', { class: 'tag' }, 'Зі своєї комори'),
-        h('p', { class: 'mute', style: 'margin:6px 0 10px' }, 'Познач справи зі «Своєї комори», які хочеш зробити спільними. Вони скопіюються сюди, а твої особисті лишаться.'),
+        h('p', { class: 'mute', style: 'margin:6px 0 10px' }, 'Твої особисті задачі й справи ще не тут. Познач потрібні або додай усі: вони скопіюються сюди, а особисті лишаться.'),
         cand.map(([k, x], i) => h('label', { class: 'check', style: 'display:flex;gap:10px;align-items:center;text-transform:none;letter-spacing:0;font-size:15px;padding:6px 0' }, boxes[i],
           h('span', {}, x.title, h('span', { class: 'mute' }, ' · ' + (k === 'c' ? 'прибирання' : 'задача') + (x.room && roomOf(x.room) ? ' · ' + roomOf(x.room) : ''))))),
-        h('div', { class: 'toolbar', style: 'margin-top:10px' }, h('button', { class: 'primary', type: 'button', onclick: go }, 'Скопіювати вибране')));
+        h('div', { class: 'toolbar', style: 'margin-top:10px' }, h('button', { class: 'primary', type: 'button', onclick: go }, 'Скопіювати вибране'),
+          h('button', { class: 'ghost', type: 'button', onclick: () => { boxes.forEach((b) => { b.checked = true; }); go(); } }, 'Додати всі (' + cand.length + ')')));
     }
     // в особистій коморі: підказка, як зробити справи спільними
     function shareHint() {
@@ -1810,15 +1801,15 @@
         h('span', { class: 'tag' + (t.due && t.due < today && !t.done ? ' warn' : '') }, t.due ? 'до ' + dayName(t.due) : 'без дати'),
         h('span', { class: 'mute shop-p' }, mins(t.minutes)),
         h('button', { class: 'link shop-x', type: 'button', onclick: (e) => { e.preventDefault(); e.stopPropagation(); taskModal(t); } }, 'Змінити'));
-      return [...header('Дім · звичайні справи', 'Мої', 'задачі'), whoBar(),
+      return [...header('Дім · звичайні справи', scope !== 'me' ? 'Спільні' : 'Мої', 'задачі'), whoBar(), scope !== 'me' ? shareFromMine() : null,
         h('div', { class: 'card', style: 'margin-bottom:28px' }, h('div', { class: 'toolbar' }, quick, h('button', { class: 'primary', type: 'button', onclick: addQuick }, 'Додати'),
           h('button', { class: 'ghost', type: 'button', onclick: () => taskModal(null) }, 'З деталями'))),
-        shareHint(), scope !== 'me' ? shareFromMine() : null,
+        shareHint(),
         rep.length ? h('div', { class: 'card', style: 'margin-bottom:20px' }, h('div', { class: 'tag' }, 'Повторювані'), rep.map(repRow)) : null,
         open.length ? h('div', { class: 'card' }, h('div', { class: 'tag' }, 'Разові'), open.flatMap((t) => [row(t), subList(t)])) : rep.length ? null : h('p', { class: 'empty' }, 'Задач немає. Додай першу: дедлайн і тривалість необовʼязкові, розклад сам знайде час.'),
         done.length ? h('details', { class: 'card', style: 'margin-top:20px' }, h('summary', {}, 'Виконані (' + done.length + ')'), done.map(row),
           h('button', { class: 'link', type: 'button', onclick: () => { hm.tasks = hm.tasks.filter((t) => !t.done); save(); render(); } }, 'Очистити виконані')) : null,
-        h('p', { class: 'note' }, 'Задачі з дедлайном потрапляють у розклад до цієї дати, а прострочені одразу на сьогодні. Повторювані з\u02bcявляються в розкладі самі, а коли забуваєш, піднімаються на сьогодні.')];
+        h('p', { class: 'note' }, 'Прострочені й незроблені вчора справи переходять на сьогодні самі.')];
     }
 
     // ----- сповіщення на телефоні (Web Push, коли застосунок закритий) -----
@@ -1940,13 +1931,6 @@
           if (!take(d.date)) continue;
           out.push({ k: id + '|' + d.date, t: 'Дім 🦆', b: fillMsg(pool[(dn + off) % pool.length], left, { all: base.length }), at });
         }
-        if (R.perItem) {
-          const add = (it) => {
-            const at = kyivAt(d.date, it.startMin); if (at < now - 10 * 60000 || !take(d.date)) return;
-            out.push({ k: d.date + '|' + it.key, t: 'Дім · зараз', b: it.title + ' (' + mins(it.minutes) + ')', at });
-          };
-          left.forEach(add);
-        }
       });
       return out.filter((i) => i.at > 0);
     };
@@ -1991,7 +1975,6 @@
         h('p', { class: 'note', style: 'margin:6px 0 0' }, 'Час за київським часом.'),
         chk('Хвалити, коли всі справи на день зроблено', R.praise, 'praise'),
         chk('Не писати зранку, якщо справ на день немає', R.skipEmpty, 'skipEmpty'),
-        chk('Додатково нагадувати у час кожної справи', R.perItem, 'perItem'),
         h('div', { class: 'toolbar', style: 'margin-top:12px;align-items:center' }, h('span', { class: 'mute' }, 'Максимум повідомлень на день:'), max),
         h('div', { class: 'mute', style: 'margin-top:14px' }, 'Дні тиші: у позначені дні повідомлень не буде'), days,
         h('p', { class: 'note', style: 'margin:10px 0 0' }, 'Опівдні й увечері пишемо лише коли ще є незроблені справи. Ці налаштування лише для тебе, кожен учасник ставить свої. Щоб повідомлення приходили, коли застосунок закритий, увімкни «Сповіщення на телефоні» вище.'));
@@ -2043,34 +2026,44 @@
           await pushSync(true); await X.callApi('/api/push', { action: 'test', endpoint: sub.endpoint }); say('Надіслано. Має зʼявитись за кілька секунд.');
         } catch (err) { say(err.message || 'Не вдалося надіслати.'); }
       } }, 'Надіслати пробне');
+      const check = h('button', { class: 'ghost', type: 'button', onclick: async () => {
+        try {
+          const sub = await pushSub(false);
+          if (!sub) throw new Error('Цей телефон не підписаний. Увімкни сповіщення вище.');
+          await pushSync(true);
+          const r = await X.callApi('/api/push', { action: 'status', endpoint: sub.endpoint });
+          if (!r.subscribed) throw new Error('Сервер не бачить цього телефона. Вимкни й увімкни сповіщення.');
+          const nx = r.next ? new Date(r.next).toLocaleString('uk-UA', { weekday: 'short', hour: '2-digit', minute: '2-digit', timeZone: TZ }) : 'нічого';
+          say('Підписка є. Заплановано: ' + r.planned + ', найближче: ' + nx + '.' + (r.missed ? ' Не надіслано вчасно: ' + r.missed + '. Схоже, зовнішній пінгер не викликає /api/push щохвилини (див. docs/deploy-auth.md, п. 4).' : ' Усе вчасно.'));
+        } catch (err) { say(err.message || 'Не вдалося перевірити.'); }
+      } }, 'Перевірити');
       const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) && !(window.navigator.standalone || (window.matchMedia && matchMedia('(display-mode: standalone)').matches));
       return h('div', { class: 'card', style: 'margin-top:20px' }, h('div', { class: 'tag' }, 'Сповіщення на телефоні'),
         h('label', { class: 'check', style: 'display:flex;gap:10px;align-items:center;text-transform:none;letter-spacing:0;font-size:15px;margin-top:8px' }, box, 'Нагадувати про справи, навіть коли застосунок закритий'),
-        h('div', { class: 'toolbar', style: 'margin-top:10px' }, test), msg,
+        h('div', { class: 'toolbar', style: 'margin-top:10px' }, test, check), msg,
         h('p', { class: 'note', style: 'margin:8px 0 0' }, pushSupported() ? (ios ? 'На iPhone спершу додай застосунок на екран «Додому»: Safari → Поділитись → «На екран Додому», і відкрий його звідти. Лише там сповіщення дозволені.' : 'Увімкни це на кожному пристрої, де хочеш отримувати нагадування.') : 'Цей браузер не підтримує сповіщення. На iPhone потрібен iOS 16.4 або новіший і застосунок, доданий на екран «Додому».'));
     }
     setInterval(() => { pushSync(false); }, 30000);
     setTimeout(() => { pushSync(false); }, 6000);
 
     // ----- Мій час (вікна часу на кожен день + нагадування) -----
-    let timeWho = '';
     // адмін: скидає ручні перенесення й заново ділить справи; зміни одразу йдуть у спільну базу
     function replanAll() {
       const hm = HM();
       for (const x of [...hm.chores, ...hm.tasks]) { delete x.pin; delete x.snooze; }
       hm.snap = null; hm.replan = Date.now(); save();
       if (typeof pushRemote === 'function' && scope !== 'me') pushRemote();
-      render(); X.toast('Перепланувала: справи розділені за графіками всіх учасників');
+      render(); X.toast('Перепланувала: справи розділені порівну');
     }
     // у спільному просторі ще порожньо, а в особистій коморі люди й графік уже є: переносимо їх
     function copyFromMine() {
       if (scope === 'me' || !user || people().length) return null;
       const mine = (loadState(user.id).home) || {};
-      if (!(mine.people && mine.people.length) && !(mine.hoursBy && Object.keys(mine.hoursBy).length) && !(mine.hours && mine.hours.length)) return null;
-      return h('div', { class: 'toolbar', style: 'margin-top:12px;align-items:center' }, h('span', { class: 'mute' }, 'У твоїй особистій коморі вже є люди й графік.'),
+      if (!(mine.people && mine.people.length)) return null;
+      return h('div', { class: 'toolbar', style: 'margin-top:12px;align-items:center' }, h('span', { class: 'mute' }, 'У твоїй особистій коморі вже є список людей.'),
         h('button', { class: 'ghost', type: 'button', onclick: () => {
-          const hm = HM(); hm.people = (mine.people || []).slice(); hm.hoursBy = JSON.parse(JSON.stringify(mine.hoursBy || {})); hm.hours = JSON.parse(JSON.stringify(mine.hours || [])); if (mine.fill != null) hm.fill = mine.fill;
-          hm.snap = null; save(); render(); X.toast('Люди й графік тепер у спільному просторі');
+          const hm = HM(); hm.people = (mine.people || []).slice();
+          hm.snap = null; save(); render(); X.toast('Люди тепер у спільному просторі');
         } }, 'Перенести у спільний простір'));
     }
     let autoScoped = false;
@@ -2084,107 +2077,47 @@
     function viewTime() {
       const hm = HM(); const ps = people(); const isMulti = ps.length >= 2;
       const admin = isHouseAdmin();
-      const who = isMulti ? (admin && ps.includes(timeWho) ? timeWho : meName()) : '';
-      const getArr = () => {
-        if (!isMulti) return hm.hours;
-        if (!hm.hoursBy || typeof hm.hoursBy !== 'object') hm.hoursBy = {};
-        if (!Array.isArray(hm.hoursBy[who])) hm.hoursBy[who] = JSON.parse(JSON.stringify(hm.hours || []));
-        return hm.hoursBy[who];
-      };
-      const hours = isMulti ? P.hoursFor(hm, who) : P.hoursOf(hm);
-      const note = h('p', { class: 'note', role: 'status' }, 'Зміни зберігаються одразу.');
-      const rows = hours.map((hh, i) => {
-        const w = hh.wins;
-        const mk = (v, lbl) => h('input', { type: 'time', value: v == null ? '' : P.fmtHM(v), 'aria-label': lbl + ', ' + WD[i] });
-        const off = h('input', { type: 'checkbox', checked: !hh.wins.length ? true : null, 'aria-label': 'Вихідний, ' + WD[i] });
-        const a1 = mk(w[0] && w[0][0], 'Вікно 1 з'); const b1 = mk(w[0] && w[0][1], 'Вікно 1 до');
-        const a2 = mk(w[1] && w[1][0], 'Вікно 2 з'); const b2 = mk(w[1] && w[1][1], 'Вікно 2 до');
-        const upd = () => {
-          const wins = [[a1.value, b1.value], [a2.value, b2.value]].filter((x) => x[0] && x[1]);
-          getArr()[i] = off.checked ? { off: true, w: wins } : { w: wins.length ? wins : [['18:30', '19:15']] };
-          save(); note.textContent = 'Збережено' + (isMulti ? ' для ' + who : '') + ': ' + (off.checked ? 'вихідний' : mins((isMulti ? P.hoursFor(hm, who) : P.hoursOf(hm))[i].min)) + ' · ' + WD[i];
-        };
-        for (const el of [off, a1, b1, a2, b2]) el.addEventListener('change', upd);
-        const win2 = h('span', { class: 'time-w' }, a2, ' – ', b2);
-        const addBtn = h('button', { class: 'link', type: 'button', onclick: () => { addBtn.replaceWith(win2); a2.focus(); } }, '+ додати ще');
-        const second = w[1] ? win2 : addBtn;
-        return h('div', { class: 'time-row' }, h('span', {}, WD[i]), h('label', { class: 'time-off' }, off, ' вихідний'),
-          h('span', { class: 'time-w' }, a1, ' – ', b1), second);
-      });
-      const notifyBox = h('input', { type: 'checkbox', checked: hm.notify ? true : null, onchange: async (e) => {
-        if (e.target.checked) {
-          let ok = typeof Notification !== 'undefined' && Notification.permission === 'granted';
-          if (!ok && typeof Notification !== 'undefined' && Notification.permission !== 'denied') { try { ok = (await Notification.requestPermission()) === 'granted'; } catch (err) { ok = false; } }
-          hm.notify = true; save();
-          X.toast(ok ? 'Нагадування увімкнено' : 'Браузер не дозволив сповіщення. Нагадування зʼявлятимуться лише на екрані застосунку.');
-        } else { hm.notify = false; save(); }
-      } });
       const peopleIn = h('input', { value: ps.join(', '), placeholder: 'Напр.: Марія, Дмитро', 'aria-label': 'Хто в сімʼї' });
       const replanBtn = !(isMulti && admin) ? null : h('div', { style: 'margin-top:14px' },
           h('button', { class: 'primary', type: 'button', onclick: replanAll }, 'Перепланувати для всіх'),
-          h('p', { class: 'note', style: 'margin:8px 0 0' }, 'Скидає ручні перенесення й заново ділить справи за графіками всіх. У решти учасників розклад оновиться сам.'));
+          h('p', { class: 'note', style: 'margin:8px 0 0' }, 'Скидає ручні перенесення й заново ділить справи порівну. У решти розклад оновиться сам.'));
       const peopleCard = h('div', { class: 'card', style: 'margin-bottom:20px' }, h('div', { class: 'tag' }, 'Хто ділить справи' + (admin && scope !== 'me' ? ' · ти адмін' : '')),
-        h('p', { class: 'mute', style: 'margin:6px 0 10px' }, 'Впиши імена через кому (двоє або більше). Кожен вказує свій вільний час, а розклад розподіляє справи між вами й підписує, чиї вони. Справу можна закріпити за людиною в її налаштуваннях, тоді вона лишається за нею.'),
-        !admin ? h('p', { class: 'note', style: 'margin:0' }, 'Склад і графіки інших учасників змінює адмін дому. Свій час ти можеш поставити нижче.') : h('div', { class: 'toolbar' }, peopleIn, h('button', { class: 'primary', type: 'button', onclick: () => {
+        h('p', { class: 'mute', style: 'margin:6px 0 10px' }, 'Впиши імена через кому. Справи діляться між вами порівну й рівномірно по днях. Справу можна передати іншій людині кнопкою «змінити».'),
+        !admin ? h('p', { class: 'note', style: 'margin:0' }, 'Склад змінює адмін дому.') : h('div', { class: 'toolbar' }, peopleIn, h('button', { class: 'primary', type: 'button', onclick: () => {
           const list = peopleIn.value.split(',').map((x) => x.trim()).filter(Boolean); hm.people = list; hm.snap = null; save(); render();
           X.toast(list.length >= 2 ? 'Справи ділитимуться між: ' + list.join(', ') : 'Додай ще одне імʼя, щоб справи ділились');
         } }, 'Зберегти')),
         copyFromMine(),
         isMulti ? h('div', { class: 'toolbar', style: 'margin-top:12px;align-items:center' }, h('span', { class: 'mute' }, 'Я —'),
-          ps.map((n) => h('button', { class: meName() === n ? 'primary' : 'ghost', type: 'button', onclick: () => { store.set(meKey(), n); timeWho = ''; hm.snap = hm.snap; render(); } }, n))) : null,
-        isMulti && admin ? h('div', { class: 'toolbar', style: 'margin-top:12px;align-items:center' }, h('span', { class: 'mute' }, 'Графік для:'),
-          ps.map((n) => h('button', { class: who === n ? 'primary' : 'ghost', type: 'button', onclick: () => { timeWho = n; render(); } }, n))) : null,
+          ps.map((n) => h('button', { class: meName() === n ? 'primary' : 'ghost', type: 'button', onclick: () => { store.set(meKey(), n); render(); } }, n))) : null,
         replanBtn);
-      return [...header('Дім · графік', 'Скільки часу', 'маю'), peopleCard,
-        h('div', { class: 'card' }, h('p', { class: 'mute', style: 'margin:0 0 12px' }, (isMulti ? 'Графік для: ' + who + '. ' : '') + 'Для кожного дня до двох «вікон», коли ' + (isMulti ? who : 'ти') + ' можна займатись домашніми справами, наприклад 08:00–08:20 і 19:00–20:00. Розклад ставить справи тільки у ці вікна.'), rows,
-          h('button', { class: 'link', type: 'button', onclick: () => { if (isMulti) { if (!hm.hoursBy) hm.hoursBy = {}; hm.hoursBy[who] = []; } else hm.hours = []; save(); render(); } }, 'Повернути стандартний графік')),
-        h('div', { class: 'card', style: 'margin-top:20px' }, h('div', { class: 'tag' }, 'Вільний час'),
-          h('label', { class: 'check', style: 'display:flex;gap:10px;align-items:center;text-transform:none;letter-spacing:0;font-size:15px;margin-top:8px' },
-            h('input', { type: 'checkbox', checked: hm.fill !== false ? true : null, onchange: (e) => { hm.fill = e.target.checked; save(); X.toast(e.target.checked ? 'Вільний час заповнюватиметься справами з найближчих днів' : 'Лише справи, що настав їхній строк'); } }),
-            'Заповнювати вільний час справами з найближчих днів'),
-          h('p', { class: 'note', style: 'margin:8px 0 0' }, 'Увімкнено: якщо в дні лишається час, у нього підтягуються справи, що мають бути за 1–4 дні. Вимкнено: у плані лише те, що вже настав строк, а решта часу вільна.')),
-        h('div', { class: 'card', style: 'margin-top:20px' }, h('div', { class: 'tag' }, 'Нагадування'),
-          h('label', { class: 'check', style: 'display:flex;gap:10px;align-items:center;text-transform:none;letter-spacing:0;font-size:15px;margin-top:8px' }, notifyBox, 'Нагадувати, коли настав час справи зі списку на сьогодні'),
-          h('p', { class: 'note', style: 'margin:8px 0 0' }, 'Працює, поки застосунок відкритий. Щоб нагадувало й коли він закритий, увімкни сповіщення на телефоні нижче.')),
-        pushCard(), remindCard(), note];
+      return [...header('Дім · налаштування', 'Люди й', 'сповіщення'), peopleCard, pushCard(), remindCard()];
     }
-
-    // нагадування: раз на пів хвилини дивимось, чи не час для справи
-    const remindedKey = new Set();
-    setInterval(() => {
-      try {
-        if (!user || !state || !state.home || !state.home.notify) return;
-        const hm = state.home; const today = todayD();
-        if (!hm.snap || hm.snap.date !== today) return;
-        const now = new Date(); const cur = now.getHours() * 60 + now.getMinutes();
-        for (const it of hm.snap.items) {
-          const k = today + it.key;
-          if (remindedKey.has(k) || isDoneNow(it) || cur < it.startMin || cur > it.startMin + 10) continue;
-          remindedKey.add(k);
-          const msg = 'Час: ' + it.title + ' (' + mins(it.minutes) + ')';
-          X.toast(msg);
-          if (typeof Notification !== 'undefined' && Notification.permission === 'granted') { try { new Notification('Дім', { body: msg, tag: k }); } catch (e) { /* не всюди підтримується */ } }
-        }
-      } catch (e) { /* ігноруємо */ }
-    }, 30000);
-
 
     // ----- пріоритети тижня: одна головна ціль і три найважливіші справи -----
     function priCard() {
       const hm = HM(); const today = todayD(); const wk = P.addDays(today, -P.wdOf(today));
-      if (!hm.pri || hm.pri.wk !== wk) hm.pri = { wk, goal: '', gd: false, t: [{ t: '', d: false }, { t: '', d: false }, { t: '', d: false }] };
-      const pr = hm.pri; while (pr.t.length < 3) pr.t.push({ t: '', d: false });
+      // порожній шаблон живе лише в памʼяті: у дані він потрапляє, коли щось введено (інакше порожній стан з іншого пристрою міг затерти введене)
+      let pr = hm.pri && hm.pri.wk === wk ? hm.pri : null;
+      const blank = () => ({ wk, goal: '', gd: false, t: [{ t: '', d: false }, { t: '', d: false }, { t: '', d: false }] });
+      const view = pr || blank();
+      while (view.t.length < 3) view.t.push({ t: '', d: false });
+      const commit = () => { if (!hm.pri || hm.pri.wk !== wk) hm.pri = view; save(); };
       const mk = (get, set, ph, big) => {
-        const cb = h('input', { type: 'checkbox', checked: get().d ? true : null, 'aria-label': 'Зроблено', onchange: (e) => { set({ ...get(), d: e.target.checked }); save(); render(); if (e.target.checked) X.toast('Є! ' + (get().t || 'Пріоритет') + ' зроблено'); } });
+        const cb = h('input', { type: 'checkbox', checked: get().d ? true : null, 'aria-label': 'Зроблено', onchange: (e) => { set({ ...get(), d: e.target.checked }); commit(); render(); if (e.target.checked) X.toast('Є! ' + (get().t || 'Пріоритет') + ' зроблено'); } });
         const tx = h('input', { value: get().t, placeholder: ph, 'aria-label': ph, style: big ? 'font-size:17px' : '' });
-        tx.addEventListener('change', () => { set({ ...get(), t: tx.value.trim() }); save(); render(); });
+        let timer = null;
+        const put = () => { const v = tx.value.trim(); if (v === get().t) return; set({ ...get(), t: v }); commit(); };
+        tx.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(put, 500); });     // зберігаємо під час набору, а не лише при виході з поля
+        tx.addEventListener('change', () => { clearTimeout(timer); put(); });
+        tx.addEventListener('blur', () => { clearTimeout(timer); put(); });
         return h('div', { class: 'toolbar', style: 'align-items:center;gap:10px;margin:6px 0;flex-wrap:nowrap' }, cb, tx);
       };
-      const all = [{ t: pr.goal, d: pr.gd }, ...pr.t].filter((x) => x.t); const dn = all.filter((x) => x.d).length;
-      return h('div', { class: 'card', style: 'margin-bottom:20px' }, h('div', { class: 'tag' }, 'Пріоритети тижня' + (all.length ? ' · ' + dn + '/' + all.length : '')),
-        mk(() => ({ t: pr.goal, d: pr.gd }), (v) => { pr.goal = v.t; pr.gd = v.d; }, 'Головна ціль тижня, наприклад: генеральне в ванній', true),
-        pr.t.map((_, i) => mk(() => pr.t[i], (v) => { pr.t[i] = v; }, 'Важлива справа ' + (i + 1))),
-        h('p', { class: 'note', style: 'margin:8px 0 0' }, 'Оновлюється щопонеділка. Бачите обоє, якщо це спільний простір.'));
+      const all = [{ t: view.goal, d: view.gd }, ...view.t].filter((x) => x.t); const dn = all.filter((x) => x.d).length;
+      return h('details', { class: 'card pri', open: all.length ? true : null, style: 'margin-top:20px' },
+        h('summary', { class: 'tag' }, 'Пріоритети тижня' + (all.length ? ' · ' + dn + '/' + all.length : '')),
+        mk(() => ({ t: view.goal, d: view.gd }), (v) => { view.goal = v.t; view.gd = v.d; }, 'Головна ціль тижня', true),
+        view.t.map((_, i) => mk(() => view.t[i], (v) => { view.t[i] = v; }, 'Важлива справа ' + (i + 1))));
     }
 
     // ----- успіхи: тепловізор, тренд по тижнях, рівень, бос і підказки -----

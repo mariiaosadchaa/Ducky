@@ -61,14 +61,15 @@ const cleanItems = (arr) => (Array.isArray(arr) ? arr : []).slice(0, 60).map((i)
   k: String((i && i.k) || '').slice(0, 80), t: String((i && i.t) || '').slice(0, 120), b: String((i && i.b) || '').slice(0, 200), at: Number(i && i.at) || 0 })).filter((i) => i.k && i.at);
 const validSub = (s) => s && typeof s.endpoint === 'string' && /^https:\/\//.test(s.endpoint) && s.keys && s.keys.p256dh && s.keys.auth;
 
-// розсилка: що настало за останні 20 хвилин і ще не надсилалось
+// розсилка: що настало за останні 45 хвилин і ще не надсилалось (запас на випадок, якщо пінгер спрацював із запізненням)
+const GRACE = 45 * 60000;
 async function runCron(env) {
   const D = db(env); const now = Date.now();
   const rows = await D.list('select=endpoint,sub,items,sent&limit=1000');
   let sentN = 0; let gone = 0;
   for (const row of rows || []) {
     const sent = new Set(row.sent || []);
-    const due = (row.items || []).filter((i) => i.at <= now && i.at >= now - 20 * 60000 && !sent.has(i.k));
+    const due = (row.items || []).filter((i) => i.at <= now && i.at >= now - GRACE && !sent.has(i.k));
     if (!due.length) continue;
     let dead = false;
     for (const i of due) {
@@ -115,6 +116,14 @@ module.exports = async (req, res) => {
     if (b.action === 'sync') {
       await D.patch('endpoint=' + eq(String(b.endpoint || '')) + '&user_id=' + eq(a.user.id), { items: cleanItems(b.items), updated_at: new Date().toISOString() });
       return send(res, 200, { ok: true });
+    }
+    if (b.action === 'status') {      // що сервер знає про цей телефон: допомагає знайти, чому не приходять повідомлення
+      const rows = await D.list('select=items,sent,updated_at&endpoint=' + eq(String(b.endpoint || '')) + '&user_id=' + eq(a.user.id));
+      if (!rows || !rows.length) return send(res, 200, { subscribed: false });
+      const now = Date.now(); const items = rows[0].items || []; const sent = new Set(rows[0].sent || []);
+      const future = items.filter((i) => i.at > now).sort((x, y) => x.at - y.at);
+      const missed = items.filter((i) => i.at < now - GRACE && i.at > now - 24 * 3600000 && !sent.has(i.k)).length;
+      return send(res, 200, { subscribed: true, planned: future.length, next: future[0] ? future[0].at : null, missed, synced: rows[0].updated_at });
     }
     if (b.action === 'unsubscribe') {
       await D.del('endpoint=' + eq(String(b.endpoint || '')) + '&user_id=' + eq(a.user.id));
