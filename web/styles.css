@@ -588,3 +588,8 @@ details.pri > summary.tag { margin-bottom:8px; }
   .who-bar .who-lbl { display:none; }
   .who-bar button { flex:1 1 0; min-width:0; padding:0 8px; min-height:40px; font-size:12px; letter-spacing:.06em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 }
+
+/* v14: сповіщення в застосунку: не вузька «квадратна» плашка, а заокруглена на всю потрібну ширину */
+.toast { left:16px !important; right:16px !important; transform:none !important; width:max-content; max-width:min(440px, calc(100vw - 32px)); margin:0 auto;
+  border-radius:16px; padding:13px 18px; text-align:center; line-height:1.4; font-size:15px; animation:toastIn .3s var(--ease); background:var(--card-solid, var(--bg)); }
+@keyframes toastIn { from { opacity:0; translate:0 10px; } to { opacity:1; translate:0 0; } }

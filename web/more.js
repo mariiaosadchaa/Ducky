@@ -943,7 +943,7 @@
         const last = c.last || null;
         const fixedWd = c.wd != null && c.wd !== '' && !isNaN(Number(c.wd));
         const carried = !!c.carry && c.carry < today && (!last || last < c.carry);     // вчора не зроблено: переходить на сьогодні
-        let next = last ? addDays(last, every) : addDays(today, c.must ? 0 : idx % Math.min(every, 7));
+        let next = last ? addDays(last, every) : today;       // ще жодного разу не робили: пора зробити, щоб пішов відлік
         if (fixedWd) {
           const base = next < today ? today : next; const w = Number(c.wd);
           next = addDays(base, (w - wdOf(base) + 7) % 7);
@@ -955,6 +955,7 @@
           const overdue = k === 0 && (due < today || carried);
           let lo = overdue ? today : addDays(due, k === 0 ? -tol : 0); if (lo < today) lo = today;
           let hi = overdue ? (c.must || carried || due >= addDays(today, -1) ? today : addDays(today, 2)) : addDays(due, tol);   // учорашнє й незроблене вчора: сьогодні; старіше: у найближчі дні, щоб не було завалу
+          if (!last && k === 0 && !c.must && !fixedWd) hi = addDays(today, every >= 3 ? 2 : 0);   // ще не робили: найближчі 3 дні, рівномірно
           if (c.snooze && k === 0 && lo < c.snooze) { lo = c.snooze; if (hi < lo) hi = lo; }
           let pinned = false;
           if (k === 0 && c.pin && c.pin >= today) { if (c.pin > horizonEnd) continue; lo = c.pin; hi = c.pin; pinned = true; }
@@ -1252,7 +1253,7 @@
     };
     const othersLabel = () => { const o = people().filter((x) => x !== meName()); return o.length ? o.join(', ') : 'Інші'; };
     const whoBar = () => !multi() ? null : h('div', { class: 'toolbar who-bar', style: 'margin:10px 0 14px;align-items:center' }, h('span', { class: 'mute who-lbl' }, 'Показати:'),
-      [['me', 'Мої'], ['other', othersLabel()], ['all', 'Усі разом']].map(([k, t]) => h('button', { class: viewWho() === k ? 'primary' : 'ghost', type: 'button', onclick: () => { store.set(VW_KEY, k); render(); } }, t)));
+      [['me', 'Мої'], ['other', othersLabel()], ['all', 'Усі']].map(([k, t]) => h('button', { class: viewWho() === k ? 'primary' : 'ghost', type: 'button', onclick: () => { store.set(VW_KEY, k); render(); } }, t)));
     const meAsk = () => !multi() || meKnown() ? null : h('div', { class: 'card', style: 'margin-bottom:20px' }, h('div', { class: 'tag' }, 'Хто ти?'),
       h('p', { class: 'mute', style: 'margin:6px 0 10px' }, 'Обери своє імʼя, щоб бачити свої справи й свій графік.'),
       h('div', { class: 'toolbar' }, people().map((n) => h('button', { class: 'ghost', type: 'button', onclick: () => { store.set(meKey(), n); render(); } }, 'Я — ' + n))));
@@ -1463,7 +1464,10 @@
     // минулий день: що було в плані й що не відмічено; відмітити можна й зараз
     function viewPastDay(today) {
       const hm = HM(); const date = P.addDays(today, -dayBack);
-      const list = ((hm.past && hm.past[date]) || []).filter(inView);
+      let list = ((hm.past && hm.past[date]) || []).filter(inView);
+      // списку за цей день ще немає (історія зберігається лише від першого відкриття): показуємо те, що зараз «з минулого», щоб можна було відмітити забуте
+      let rebuilt = false;
+      if (!list.length && hm.snap) { list = hm.snap.items.filter((i) => i.overdue && inView(i)).map((i) => ({ key: i.key, type: i.type, id: i.id, title: i.title, room: i.room || null, minutes: i.minutes, who: i.who || '' })); rebuilt = list.length > 0; }
       const doneKeys = hm.log[date] || [];
       const open = list.filter((i) => !doneKeys.includes(i.key)); const dn = list.filter((i) => doneKeys.includes(i.key));
       const row = (i, isDone) => h('label', { class: 'shop-row h-row' + (isDone ? ' done' : '') },
@@ -1473,9 +1477,9 @@
       return [...header(dayName(date, true), dayBack === 1 ? 'Що було' : 'Що було', dayBack === 1 ? 'вчора' : 'тоді'), dayStrip(today), whoBar(),
         list.length
           ? h('div', { class: 'card' },
-            h('p', { class: 'mute', style: 'margin:0 0 10px' }, open.length ? 'Не відмічено: ' + open.length + '. Якщо зробила, познач, і справа врахується.' : 'Усе було зроблено.'),
+            h('p', { class: 'mute', style: 'margin:0 0 10px' }, open.length ? (rebuilt ? 'Історії за цей день ще немає, тут справи «з минулого». ' : '') + 'Не відмічено: ' + open.length + '. Якщо зробила, познач, і справа врахується.' : 'Усе було зроблено.'),
             h('div', {}, open.map((i) => row(i, false)), dn.map((i) => row(i, true))))
-          : h('p', { class: 'empty' }, 'Для цього дня списку немає. Він зберігається, коли застосунок відкрито в той день.')];
+          : h('p', { class: 'empty' }, 'Історія днів почала зберігатись від сьогодні, тому за цей день списку ще немає. Усе незроблене вже в плані на сьогодні.')];
     }
     function viewToday() {
       const hm = HM(); const today = todayD(); const snap = todaySnap();

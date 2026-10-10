@@ -1,0 +1,109 @@
+/* «Еспресо»: стиль із застосунку Java Бариста (EspressoCode): кремовий і темно-кавовий фон, золото, обʼємні кнопки, товсті рамки.
+   Підключається після styles.css і перевизначає його. */
+:root, :root[data-theme="dark"] {
+  --bg:#100B08; --card:#1B1411; --fg:#F2E8D5; --mute:#A8998A; --line:#33271E; --line-edge:#241A14;
+  --gold:#D8B45F; --gold-hi:#E8C46B; --btn-bg:#D8B45F; --btn-fg:#1A1108; --edge:#9C7B2E; --danger:#F0777C;
+  --good:#5FCB98; --good-edge:#35996B; --good-bg:#14301F; --on-good:#07210F;
+  --spot:rgba(216,180,95,.16); --glow:rgba(0,0,0,.4); --spark:216,180,95; --fill:rgba(255,255,255,.08); --glass:#1B1411;
+  --duck-body:#E8B64C; --duck-beak:#EC7A2C; --duck-eye:#100B08;
+  --serif:'Playfair Display',Georgia,serif; --sans:'Onest',system-ui,-apple-system,'Segoe UI',sans-serif;
+  color-scheme:dark;
+}
+:root[data-theme="light"] {
+  --bg:#F5EFE4; --card:#FFFCF6; --fg:#1E1510; --mute:#6A5B4C; --line:#E2D6BF; --line-edge:#CDBE9F;
+  --gold:#8A6420; --gold-hi:#B8862B; --btn-bg:#2B1B11; --btn-fg:#F1D790; --edge:#0F0804; --danger:#B5373F;
+  --good:#2E7D5B; --good-edge:#1F5C41; --good-bg:#E0F0E6; --on-good:#FFFFFF;
+  --spot:rgba(184,134,43,.18); --glow:rgba(43,27,17,.2); --spark:184,134,43; --fill:rgba(43,27,17,.07); --glass:#FFFCF6;
+  --duck-body:#F2B63C; --duck-beak:#EC7A2C; --duck-eye:#1E1510;
+  color-scheme:light;
+}
+
+/* без ефектів «люксу»: фон, іскри, хвилі, підсвітка */
+.bg, #sparks, .pond, .cursor-glow, .spark, .ink { display:none !important; }
+body { font-weight:400; font-size:16px; }
+.card::before, button.primary::after { display:none !important; }
+.card, .card:hover { backdrop-filter:none !important; -webkit-backdrop-filter:none !important; box-shadow:none; transform:none; }
+.card { background:var(--card); border:2px solid var(--line); border-radius:18px; padding:18px; }
+.card.gold, .card.gold:hover { background:var(--card); border-color:var(--gold); }
+.card:hover { border-color:var(--line); }
+.card.gold:hover { border-color:var(--gold); }
+
+/* заголовки */
+h1 { font:700 clamp(26px,5vw,38px)/1.2 var(--serif); margin:6px 0 18px; text-wrap:balance; }
+h1 em { font-style:normal; color:var(--gold); background:none !important; -webkit-text-fill-color:currentColor !important; animation:none !important; }
+h1 .w { animation:none !important; opacity:1 !important; transform:none !important; filter:none !important; }
+h2 { font:700 18px var(--serif); color:var(--fg); }
+.eyebrow, .tag { font:700 12px var(--sans); letter-spacing:.09em; text-transform:uppercase; color:var(--mute); }
+.brand span { font:700 22px var(--serif); letter-spacing:-.01em; color:var(--fg); }
+.brand { color:var(--gold); }
+.mute, .note { color:var(--mute); }
+
+/* кнопки: обʼємні, як у Java Бариста */
+button.primary, button.ghost { border-radius:14px; font:700 14px var(--sans); letter-spacing:.05em; text-transform:uppercase; min-height:46px; padding:12px 20px; transition:transform .08s, box-shadow .08s, filter .2s; }
+button.primary { background:var(--btn-bg); color:var(--btn-fg); border:0; box-shadow:0 4px 0 var(--edge); }
+button.primary:hover { transform:none; box-shadow:0 4px 0 var(--edge); filter:brightness(1.07); }
+button.primary:active { transform:translateY(3px); box-shadow:0 1px 0 var(--edge); }
+button.ghost { background:transparent; color:var(--gold); border:2px solid var(--line); box-shadow:0 3px 0 var(--line); }
+button.ghost:hover { background:transparent; color:var(--gold); border-color:var(--gold); transform:none; }
+button.ghost:active { transform:translateY(2px); box-shadow:0 1px 0 var(--line); }
+button:disabled { opacity:.5; cursor:not-allowed; }
+button.link { font:600 14px var(--sans); color:var(--mute); }
+.fab { background:var(--btn-bg); color:var(--btn-fg); box-shadow:0 4px 0 var(--edge); }
+.fab:active { transform:translateY(3px); box-shadow:0 1px 0 var(--edge); }
+.toolbar { gap:10px; }
+
+/* поля */
+input, select, textarea { background:var(--card); color:var(--fg); border:2px solid var(--line); border-radius:12px; font:400 16px var(--sans); padding:11px 14px; }
+input:focus, select:focus, textarea:focus { border-color:var(--gold); box-shadow:none; outline:none; }
+input[type="checkbox"] { -webkit-appearance:none; appearance:none; flex:none; width:26px; height:26px; margin:0; padding:0; border:2px solid color-mix(in srgb, var(--mute) 65%, transparent); border-radius:8px; background:var(--card); display:inline-grid; place-content:center; cursor:pointer; accent-color:initial; }
+input[type="checkbox"]:checked { background:var(--good); border-color:var(--good); }
+input[type="checkbox"]:checked::after { content:""; width:7px; height:12px; border:solid var(--on-good); border-width:0 3px 3px 0; transform:rotate(45deg) translate(-1px,-1px); }
+input[type="checkbox"]:disabled { opacity:.5; }
+
+/* меню: на ПК пігулки, на телефоні нижня панель */
+nav { gap:6px; }
+nav button { border:0; border-radius:12px; padding:8px 14px; font:700 13px var(--sans); letter-spacing:.02em; text-transform:none; color:var(--mute); }
+nav button:hover { color:var(--fg); }
+nav button[aria-current="page"] { color:var(--gold); background:color-mix(in srgb, var(--gold) 14%, var(--card)); border-bottom-color:transparent; }
+nav .ind, nav .indicator { display:none; }
+@media (max-width:700px) {
+  #nav { background:var(--card) !important; -webkit-backdrop-filter:none !important; backdrop-filter:none !important; border-top:2px solid var(--line); padding:6px 8px calc(6px + env(safe-area-inset-bottom)); gap:4px; }
+  #nav button { border-radius:12px; padding:6px 2px; font:700 11px var(--sans); color:var(--mute); }
+  #nav button[aria-current="page"] { color:var(--gold); background:color-mix(in srgb, var(--gold) 14%, var(--card)); }
+  #nav button[aria-current="page"] svg { transform:none; }
+  header.top { background:var(--bg); }
+}
+
+/* цифри й показники */
+.stat { background:var(--card); border:2px solid var(--line); border-radius:18px; padding:14px 18px; }
+.stat-n { font:700 34px/1.1 var(--serif); color:var(--gold); }
+.stat-l { font:700 12px var(--sans); letter-spacing:.09em; color:var(--mute); }
+.h-prog { height:12px; border-radius:999px; background:var(--line); }
+.h-prog span { border-radius:999px; background:var(--gold); }
+.chip, .day-chip { border:2px solid var(--line); border-radius:12px; background:var(--card); color:var(--fg); font:600 14px var(--sans); box-shadow:0 3px 0 var(--line); transition:transform .08s, box-shadow .08s; }
+.chip:hover { transform:none; color:var(--fg); border-color:var(--gold); }
+.day-chip { border-radius:12px; min-height:40px; }
+.day-chip.on { background:var(--btn-bg); color:var(--btn-fg); border-color:var(--btn-bg); box-shadow:0 3px 0 var(--edge); }
+.age { border-radius:999px; border-width:2px; font-weight:700; }
+.shop-row, .chore-row { border-top:2px solid var(--line); }
+.shop-row:first-child, .chore-row:first-child { border-top:0; }
+.shop-row.done .shop-n { opacity:.5; }
+table th { font:700 12px var(--sans); letter-spacing:.09em; border-bottom:2px solid var(--line); }
+details > summary { font-weight:700; }
+
+/* модальні вікна й списки */
+.modal { background:var(--card); border:2px solid var(--line); border-radius:20px; box-shadow:none; }
+.modal-ov { backdrop-filter:none; background:rgba(16,11,8,.6); }
+.sheet-item { font:600 17px var(--sans); border-top:2px solid var(--line); }
+.dd-btn { border:2px solid var(--line); border-radius:12px; font:600 15px var(--sans); }
+.dd-list { border:2px solid var(--line); border-radius:16px; box-shadow:0 12px 30px -12px rgba(0,0,0,.5); }
+.dd-item { font:600 15px var(--sans); }
+@media (max-width:700px) { .modal { border-radius:20px 20px 0 0; } }
+
+/* сповіщення в застосунку: темна плашка зверху, як у Java Бариста */
+.toast { top:calc(12px + env(safe-area-inset-top)) !important; bottom:auto !important; background:var(--fg); color:var(--bg); border:0; border-radius:16px; padding:12px 18px; font:600 15px var(--sans); box-shadow:0 8px 24px -8px rgba(0,0,0,.5); animation:espToast .35s cubic-bezier(.2,1.1,.3,1) !important; z-index:90; }
+@keyframes espToast { from { opacity:0; translate:0 -24px; } to { opacity:1; translate:0 0; } }
+
+/* екран нової версії */
+.upd-box h2 { font:700 28px var(--serif); }
+.upd-btn { min-height:54px; }
