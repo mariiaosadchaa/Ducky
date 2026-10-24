@@ -50,9 +50,80 @@
         else if (a.left) { if (isW(a.left)) p.weight = a.left; else p.qty = a.left; up++; }
       }
     }
-    save(); undo = snap; pending = null; draft = ''; off = new Set();
+    save(); undo = snap; pending = null; draft = ''; off = new Set(); if (inboxIds.length) clearInbox(inboxIds).then(render);
     msg = 'Готово: додано ' + add + ', прибрано ' + rm + ', змінено ' + up + '.';
     render();
+  }
+
+  // ---------- швидкі команди iPhone: черга з Supabase ----------
+  const SB = () => (typeof sb !== 'undefined' && sb && typeof user !== 'undefined' && user) ? sb : null;
+  let inbox = []; let inboxLoaded = false; let inboxIds = []; let key = null; let keyOpen = false; let keyMsg = '';
+  async function loadInbox() {
+    const c = SB(); if (!c) return;
+    try {
+      const r = await c.from('ducky_inbox').select('id, text, created_at').order('created_at', { ascending: true }).limit(50);
+      inboxLoaded = true;
+      if (r.error) return;
+      const next = r.data || [];
+      if (next.length !== inbox.length || next.some((x, i) => !inbox[i] || inbox[i].id !== x.id)) { inbox = next; render(); }
+    } catch (e) { /* без мережі */ }
+  }
+  async function loadKey() {
+    const c = SB(); if (!c) return;
+    const r = await c.from('ducky_inbox_keys').select('key').maybeSingle();
+    if (r.error) { keyMsg = 'Таблиці для команд ще немає. Виконайте SQL з docs/supabase.sql (розділ «Швидкі команди iPhone»).'; render(); return; }
+    key = r.data ? r.data.key : null; render();
+  }
+  async function makeKey() {
+    const c = SB(); if (!c) return;
+    const a = new Uint8Array(24); crypto.getRandomValues(a);
+    const k = [...a].map((x) => x.toString(16).padStart(2, '0')).join('');
+    const r = await c.from('ducky_inbox_keys').upsert({ user_id: user.id, key: k });
+    if (r.error) { keyMsg = 'Не вдалося створити ключ: ' + r.error.message; render(); return; }
+    key = k; keyMsg = 'Новий ключ створено. Старі команди з попереднім ключем більше не працюватимуть.'; render();
+  }
+  function takeInbox() {
+    if (!inbox.length) return;
+    inboxIds = inbox.map((x) => x.id);
+    draft = inbox.map((x) => x.text).join('. ');
+    run();
+  }
+  async function clearInbox(ids) {
+    const c = SB(); if (!c || !ids.length) return;
+    try { await c.from('ducky_inbox').delete().in('id', ids); } catch (e) { /* лишиться в черзі */ }
+    inbox = inbox.filter((x) => !ids.includes(x.id)); inboxIds = [];
+  }
+  function inboxCard() {
+    const url = (window.DUCKY_CONFIG && window.DUCKY_CONFIG.supabaseUrl || '').replace(/\/+$/, '') + '/rest/v1/rpc/ducky_inbox_add';
+    const anon = window.DUCKY_CONFIG && window.DUCKY_CONFIG.supabaseAnonKey || '';
+    const copy = (t, label) => h('button', { class: 'ghost', type: 'button', style: 'min-height:44px', onclick: async () => { try { await navigator.clipboard.writeText(t); keyMsg = label + ' скопійовано.'; } catch (e) { keyMsg = 'Не вдалося скопіювати. Затисніть текст і скопіюйте вручну.'; } render(); } }, 'Копіювати ' + label);
+    const box = (t) => h('input', { value: t, readonly: true, 'aria-label': t.slice(0, 20), style: 'width:100%;box-sizing:border-box;font-size:14px;margin:4px 0 8px', onfocus: (e) => e.target.select() });
+    return h('details', { class: 'card', style: 'margin-bottom:20px', open: keyOpen ? true : null, ontoggle: (e) => { keyOpen = e.target.open; if (keyOpen && key === null && !keyMsg) loadKey(); } },
+      h('summary', { style: 'min-height:44px;display:flex;align-items:center;cursor:pointer' }, 'Швидкі команди iPhone'),
+      h('div', { style: 'margin-top:10px' },
+        h('p', { class: 'mute', style: 'margin:0 0 10px' }, 'Створи на iPhone команду, яка надсилає текст («додай молоко 200 мл», «видали плавлений сир Гриби»). Він потрапить сюди в чергу, а ти підтвердиш зміни.'),
+        !SB() ? h('p', { class: 'note' }, 'Потрібно увійти в акаунт з хмарою.')
+          : key ? h('div', {},
+            h('div', { class: 'tag' }, 'Адреса (URL)'), box(url), copy(url, 'адресу'),
+            h('div', { class: 'tag', style: 'margin-top:10px' }, 'Твій ключ (нікому не показуй)'), box(key), copy(key, 'ключ'),
+            h('div', { class: 'tag', style: 'margin-top:10px' }, 'Публічний ключ Supabase (apikey)'), box(anon), copy(anon, 'apikey'),
+            h('ol', { style: 'margin:14px 0 0;padding-left:20px;line-height:1.5' },
+              h('li', {}, 'У застосунку «Команди» натисни «+» і додай дію «Диктувати текст» (або «Запитати введення»).'),
+              h('li', {}, 'Додай «Отримати вміст URL». Встав адресу, Метод: POST, Тіло запиту: JSON.'),
+              h('li', {}, 'Заголовки: apikey = публічний ключ вище; Content-Type = application/json.'),
+              h('li', {}, 'У JSON додай два поля, обидва «Текст»: p_key = твій ключ, p_text = змінна «Надиктований текст».'),
+              h('li', {}, 'Назви команду «Комора» і додай на головний екран або запускай голосом: «Привіт, Siri, Комора».')),
+            h('button', { class: 'link', type: 'button', style: 'min-height:44px;margin-top:6px', onclick: makeKey }, 'Створити новий ключ'))
+          : h('button', { class: 'primary', type: 'button', style: 'min-height:46px', onclick: makeKey }, 'Створити ключ'),
+        keyMsg ? h('p', { class: 'note', role: 'status', style: 'margin:10px 0 0' }, keyMsg) : null));
+  }
+  function queueCard() {
+    if (!inbox.length || pending) return null;
+    return h('div', { class: 'card pa', style: 'margin-bottom:20px;border-color:var(--gold)' }, h('div', { class: 'tag' }, 'З команд iPhone: ' + inbox.length),
+      h('ul', { class: 'pa-list', style: 'margin-top:8px' }, inbox.map((x) => h('li', {}, h('span', {}, '«' + x.text + '»')))),
+      h('div', { class: 'toolbar', style: 'margin-top:10px' },
+        h('button', { class: 'primary', type: 'button', style: 'min-height:46px', disabled: busy ? true : null, onclick: takeInbox }, busy ? 'Думаю…' : 'Розібрати'),
+        h('button', { class: 'ghost', type: 'button', style: 'min-height:46px', onclick: () => clearInbox(inbox.map((x) => x.id)).then(render) }, 'Очистити')));
   }
 
   function card() {
@@ -75,16 +146,18 @@
       undo && !pending ? h('button', { class: 'link', type: 'button', style: 'min-height:44px', onclick: () => { state.products = undo.products; state.archive = undo.archive; undo = null; msg = 'Останню зміну скасовано.'; save(); render(); } }, 'Скасувати останню зміну') : null);
   }
 
+  const refresh = () => { if (document.visibilityState !== 'hidden') loadInbox(); };
+  document.addEventListener('visibilitychange', refresh); setTimeout(refresh, 1500); setInterval(refresh, 60000);
   const orig = VIEWS.pantry;
   VIEWS.pantry = () => {
     const out = orig();
     const gi = out.findIndex((el) => el && el.classList && el.classList.contains('card') && /Додати списком/.test(el.textContent || ''));
     if (gi >= 0) {
       const old = out[gi]; old.style.marginBottom = '0';
-      out.splice(gi, 1, card(), h('details', { class: 'card', style: 'margin-bottom:24px' }, h('summary', { style: 'min-height:44px;display:flex;align-items:center;cursor:pointer' }, 'Без ШІ: додати списком'), h('div', { style: 'margin-top:10px' }, old)));
+      out.splice(gi, 1, ...[queueCard(), card(), inboxCard()].filter(Boolean), h('details', { class: 'card', style: 'margin-bottom:24px' }, h('summary', { style: 'min-height:44px;display:flex;align-items:center;cursor:pointer' }, 'Без ШІ: додати списком'), h('div', { style: 'margin-top:10px' }, old)));
     } else {
       const g2 = out.findIndex((el) => el && el.classList && el.classList.contains('grid'));
-      out.splice(g2 < 0 ? out.length : g2, 0, card());
+      out.splice(g2 < 0 ? out.length : g2, 0, ...[queueCard(), card(), inboxCard()].filter(Boolean));
     }
     return out;
   };
