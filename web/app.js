@@ -764,6 +764,18 @@ function emblem() {
   return d;
 }
 
+// вкладки «Вхід / Реєстрація» замість окремого посилання внизу
+function authTabs(isReg) {
+  const t = (reg, label) => h('button', { type: 'button', role: 'tab', 'aria-selected': (isReg === reg) ? 'true' : 'false', class: isReg === reg ? 'on' : '', onclick: () => { if (isReg !== reg) { authMode = reg ? 'register' : 'login'; render(); } } }, label);
+  return h('div', { class: 'auth-tabs', role: 'tablist' }, t(false, 'Вхід'), t(true, 'Реєстрація'));
+}
+// поле пароля з кнопкою «показати»
+function pwField(label, name, ac) {
+  const inp = h('input', { name, type: 'password', autocomplete: ac, 'aria-label': label, placeholder: label });
+  const eye = h('button', { type: 'button', class: 'pw-eye', 'aria-label': 'Показати пароль', onclick: () => { const show = inp.type === 'password'; inp.type = show ? 'text' : 'password'; eye.textContent = show ? 'Сховати' : 'Показати'; } }, 'Показати');
+  return h('div', { class: 'pw-wrap' }, inp, eye);
+}
+
 function viewAuthRemote() {
   if (authMode === 'recovery') {
     const msg = h('p', { class: 'form-error', role: 'alert' });
@@ -782,7 +794,7 @@ function viewAuthRemote() {
   const isReg = authMode === 'register';
   const msg = h('p', { class: 'form-error', role: 'alert' });
   const info = h('p', { class: 'note', role: 'status' });
-  const email = h('input', { name: 'email', type: 'email', autocomplete: 'email' });
+  const email = h('input', { name: 'email', type: 'email', autocomplete: 'email', placeholder: 'Електронна пошта', 'aria-label': 'Електронна пошта' });
   const form = h('form', { class: 'auth-form', novalidate: true, onsubmit: async (e) => {
     e.preventDefault();
     const f = new FormData(e.target);
@@ -792,7 +804,6 @@ function viewAuthRemote() {
     if (isReg) {
       if (!String(f.get('name')).trim()) { msg.textContent = 'Вкажіть ім\'я.'; return; }
       if (pw.length < 8) { msg.textContent = 'Пароль має містити щонайменше 8 символів.'; return; }
-      if (pw !== String(f.get('pw2'))) { msg.textContent = 'Паролі не збігаються.'; return; }
       const { data, error } = await sb.auth.signUp({ email: mail, password: pw, options: { data: { full_name: String(f.get('name')).trim() } } });
       if (error) { msg.textContent = authError(error.message); return; }
       if (!data.session) info.textContent = 'Ми надіслали лист для підтвердження. Перейдіть за посиланням у ньому, потім увійдіть.';
@@ -801,10 +812,9 @@ function viewAuthRemote() {
       if (error) msg.textContent = authError(error.message);
     }
   } },
-    isReg && h('label', {}, 'Ім\'я', h('input', { name: 'name', autocomplete: 'name' })),
-    h('label', {}, 'Електронна пошта', email),
-    h('label', {}, 'Пароль', h('input', { name: 'pw', type: 'password', autocomplete: isReg ? 'new-password' : 'current-password' })),
-    isReg && h('label', {}, 'Повторіть пароль', h('input', { name: 'pw2', type: 'password', autocomplete: 'new-password' })),
+    isReg && h('input', { name: 'name', autocomplete: 'name', placeholder: 'Імʼя', 'aria-label': 'Імʼя' }),
+    email,
+    pwField(isReg ? 'Пароль (від 8 символів)' : 'Пароль', 'pw', isReg ? 'new-password' : 'current-password'),
     msg,
     h('button', { class: 'primary', type: 'submit' }, isReg ? 'Створити обліковий запис' : 'Увійти'),
     !isReg && h('button', { class: 'link', type: 'button', onclick: async () => {
@@ -814,20 +824,17 @@ function viewAuthRemote() {
       const { error } = await sb.auth.resetPasswordForEmail(mail, { redirectTo: location.origin + location.pathname });
       if (error) msg.textContent = authError(error.message); else info.textContent = 'Якщо така пошта є, ми надіслали лист для відновлення.';
     } }, 'Забули пароль?'));
-  return [h('div', { class: 'auth' },
+  return [h('div', { class: 'auth auth-compact' },
     emblem(),
-    h('div', { class: 'eyebrow' }, isReg ? 'Ласкаво просимо' : 'З поверненням'),
-    h('h1', {}, isReg ? 'Створіть свій' : 'Увійдіть у свій', ' ', h('em', {}, 'ставок')),
+    h('h1', {}, 'Ducky ', h('em', {}, isReg ? 'знайомство' : 'вхід')),
+    authTabs(isReg),
     h('div', { class: 'card' },
       h('button', { class: 'ghost wide', type: 'button', onclick: async () => {
         const { error } = await sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin + location.pathname } });
         if (error) msg.textContent = authError(error.message);
-      } }, 'Увійти через Google'),
+      } }, 'Через Google'),
       h('div', { class: 'or' }, 'або поштою'), form, info),
-    h('p', { class: 'note' }, isReg ? 'Уже є обліковий запис? ' : 'Ще немає облікового запису? ',
-      h('button', { class: 'link', type: 'button', onclick: () => { authMode = isReg ? 'login' : 'register'; render(); } },
-        isReg ? 'Увійти' : 'Зареєструватися')),
-    h('p', { class: 'note' }, 'Обліковий запис спільний із Rivna app: увійдіть тією ж поштою та паролем або через Google.'))];
+    h('p', { class: 'note auth-note' }, 'Той самий обліковий запис, що й у Rivna app.'))];
 }
 
 function viewAuth() {
@@ -840,25 +847,21 @@ function viewAuth() {
     msg.textContent = '';
     if (!(window.crypto && crypto.subtle)) { msg.textContent = 'Цей браузер не підтримує безпечне збереження пароля.'; return; }
     const err = isReg
-      ? await register(String(f.get('name')), String(f.get('email')), String(f.get('pw')), String(f.get('pw2')))
+      ? await register(String(f.get('name')), String(f.get('email')), String(f.get('pw')), String(f.get('pw')))
       : await login(String(f.get('email')), String(f.get('pw')));
     if (err) msg.textContent = err;
   } },
-    isReg && h('label', {}, 'Ім\'я', h('input', { name: 'name', autocomplete: 'name' })),
-    h('label', {}, 'Електронна пошта', h('input', { name: 'email', type: 'email', autocomplete: 'email' })),
-    h('label', {}, 'Пароль', h('input', { name: 'pw', type: 'password', autocomplete: isReg ? 'new-password' : 'current-password' })),
-    isReg && h('label', {}, 'Повторіть пароль', h('input', { name: 'pw2', type: 'password', autocomplete: 'new-password' })),
+    isReg && h('input', { name: 'name', autocomplete: 'name', placeholder: 'Імʼя', 'aria-label': 'Імʼя' }),
+    h('input', { name: 'email', type: 'email', autocomplete: 'email', placeholder: 'Електронна пошта', 'aria-label': 'Електронна пошта' }),
+    pwField(isReg ? 'Пароль (від 8 символів)' : 'Пароль', 'pw', isReg ? 'new-password' : 'current-password'),
     msg,
     h('button', { class: 'primary', type: 'submit' }, isReg ? 'Створити обліковий запис' : 'Увійти'));
-  return [h('div', { class: 'auth' },
+  return [h('div', { class: 'auth auth-compact' },
     emblem(),
-    h('div', { class: 'eyebrow' }, isReg ? 'Ласкаво просимо' : 'З поверненням'),
-    h('h1', {}, isReg ? 'Створіть свій' : 'Увійдіть у свій', ' ', h('em', {}, 'ставок')),
+    h('h1', {}, 'Ducky ', h('em', {}, isReg ? 'знайомство' : 'вхід')),
+    authTabs(isReg),
     h('div', { class: 'card' }, form),
-    h('p', { class: 'note' }, isReg ? 'Уже є обліковий запис? ' : 'Ще немає облікового запису? ',
-      h('button', { class: 'link', type: 'button', onclick: () => { authMode = isReg ? 'login' : 'register'; render(); } },
-        isReg ? 'Увійти' : 'Зареєструватися')),
-    h('p', { class: 'note' }, 'Обліковий запис зберігається лише в цьому браузері, на вашому пристрої. Відновити пароль неможливо.'))];
+    h('p', { class: 'note auth-note' }, 'Обліковий запис лише на цьому пристрої. Відновити пароль неможливо.'))];
 }
 
 const fxDone = (key) => { if (window.DuckyFX) window.DuckyFX.afterRender(key); };
