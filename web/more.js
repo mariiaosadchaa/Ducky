@@ -2262,7 +2262,7 @@
 
     // Вхід для екрана «по годинах» (web/day.js)
     window.DuckyHomeAPI = {
-      P, HM, todayD, todaySnap, inView, isDoneNow, tick, itemMenu, dayName, mins, roomName, meName, multi, people,
+      P, HM, todayD, todaySnap, inView, viewWho, whoBar, isDoneNow, tick, itemMenu, dayName, mins, roomName, meName, multi, people,
       openShopCount: () => { try { const d = done(); return shoppingItems().filter((i) => !d[i.key]).length; } catch (e) { return 0; } },
       oldToday: () => viewToday(),
       pinQuiet: (item, date) => { if (/#/.test(item.key)) return false; const x = findSrc(item); if (!x) return false; x.pin = date; delete x.snooze; delete x.carry; return true; },

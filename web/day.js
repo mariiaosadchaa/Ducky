@@ -214,7 +214,11 @@
   function build(date) {
     const hm = A.HM(); const today = A.todayD(); const idx = P.diff(date, today);
     ensureRecur(hm, date);
-    const wd = P.wdOf(date); const wins = winsOn(hm, date, null);
+    const wd = P.wdOf(date);
+    // режим «Показати: інша людина»: її вільні години, без моїх задач, готування й магазину
+    const lcn = (x) => String(x || '').trim().toLowerCase();
+    const other = A.viewWho && A.viewWho() === 'other' ? (A.people().find((x) => lcn(x) !== lcn(A.meName())) || null) : null;
+    const wins = winsOn(hm, date, other);
     const plan = P.planWeek(hm, today);
     const src = idx === 0 ? A.todaySnap().items : ((plan.days[idx] || { items: [] }).items);
     const mine = src.filter(A.inView);
@@ -223,11 +227,11 @@
     const nowD = new Date(); const now = idx === 0 ? nowD.getHours() * 60 + nowD.getMinutes() : null;
     const sd = shopDate(hm, today);
     const cnt = A.openShopCount();
-    const list = listOf(hm, date);
+    const list = other ? { calc: false, items: [] } : listOf(hm, date);
     const myTasks = list.calc ? list.items.map((x) => ({ id: x.id, title: x.title, minutes: (x.ai && !x.userMin ? x.ai.minutes : x.minutes), done: !!x.done, by: x.by ? D.toMin(x.by) : null, order: x.ai ? x.ai.order : null, pref: x.ai ? x.ai.part : null, note: x.ai ? x.ai.note : '', aiMin: !!(x.ai && !x.userMin) })) : [];
-    const r = D.scheduleDay({ wins, cooks: cooksFor(hm, wd), shop: sd === date ? { minutes: D.SHOP_MIN, count: cnt } : null, items: open, mine: myTasks, now, date });
+    const r = D.scheduleDay({ wins, cooks: other ? [] : cooksFor(hm, wd), shop: !other && sd === date ? { minutes: D.SHOP_MIN, count: cnt } : null, items: open, mine: myTasks, now, date });
     const myDone = list.items.filter((x) => x.done);
-    return { ...r, date, idx, wd, doneItems, myDone, list, now, hasWins: wins.length > 0 };
+    return { ...r, date, idx, wd, doneItems, myDone, list, now, other, hasWins: wins.length > 0 };
   }
 
   const ICON = { cook: '🍲', shop: '🛒', chore: '🧹', task: '✅', my: '📝' };
@@ -578,7 +582,7 @@
     const isToday = r.idx === 0;
     const pct = r.freeTotal ? Math.min(100, Math.round((r.busy / r.freeTotal) * 100)) : 0;
     const summary = !r.hasWins ? 'У цей день немає вільних годин.' : (r.blocks.length ? r.blocks.length + ' ' + (r.blocks.length === 1 ? 'блок' : 'блоків') + ' · зайнято ' + dur(r.busy) + ' із ' + dur(r.freeTotal) + ' вільних' : 'Нічого не заплановано. Вільно ' + dur(r.freeTotal) + '.');
-    return [...header('Дім · ' + A.dayName(selDate, true), 'Мій день по', 'годинах'), strip(today), nextCard(r), manageCard(r),
+    return [...header('Дім · ' + A.dayName(selDate, true) + (r.other ? ' · ' + r.other : ''), r.other ? r.other + ': день по' : 'Мій день по', 'годинах'), strip(today), A.whoBar ? A.whoBar() : null, r.other ? h('p', { class: 'note', style: 'margin:0 0 12px' }, 'Справи й вільні години: ' + r.other + '. Години беруться з його налаштувань (типові, якщо він їх ще не задав). Готування й магазин тут не показані.') : null, nextCard(r), r.other ? null : manageCard(r),
       h('div', { class: 'card tl-sum' }, h('div', { class: 'mute', style: 'margin-bottom:10px' }, summary), dayMap(r),
         h('div', { class: 'tl-legend' }, [['dm-win', 'вільно'], ['dm-my', 'мої задачі'], ['dm-cook', 'готування'], ['dm-chore', 'справи'], ['dm-task', 'задачі'], ['dm-shop', 'магазин']].map(([c, t]) => h('span', {}, h('i', { class: 'dm-seg-i ' + c }), t)))),
       r.hasWins ? h('div', { class: 'tl' }, timeline(r)) : h('p', { class: 'empty' }, 'Додай вільні години, і я розкладу справи по годинах.'),
@@ -592,7 +596,7 @@
           h('button', { class: 'link h-mv', type: 'button', onclick: () => { x.done = false; save(); render(); } }, 'скасувати'))), r.doneItems.map((i) => h('li', { class: 'done' }, h('span', { class: 'h-n' }, i.title), h('span', { class: 'mute' }, dur(i.minutes)),
           h('button', { class: 'link h-mv', type: 'button', onclick: () => { A.tick(i, false); render(); } }, 'скасувати'))))) : null,
       h('div', { class: 'toolbar tl-tools' },
-        h('button', { class: 'primary', type: 'button', onclick: hoursSheet }, 'Мої вільні години'),
+        r.other ? null : h('button', { class: 'primary', type: 'button', onclick: hoursSheet }, 'Мої вільні години'),
         h('button', { class: 'ghost', type: 'button', onclick: () => { hm.snap = null; save(); render(); X.toast('Розклад перераховано'); } }, 'Перепланувати'),
         h('button', { class: 'ghost', type: 'button', onclick: () => { store.set(LIST_KEY, '1'); render(); } }, 'Списком'),
         h('button', { class: 'ghost', type: 'button', onclick: () => exportDays([selDate], 'ducky-' + selDate + '.ics') }, 'У Календар: день'),
