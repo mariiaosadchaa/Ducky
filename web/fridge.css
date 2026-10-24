@@ -1,0 +1,40 @@
+/* Віртуальний холодильник: mobile-first, дотикові цілі від 44px */
+.fr-wrap { margin: 4px 0 20px; }
+.fr-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
+.fr-tabs button { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 64px; padding: 8px 4px; border: 1.5px solid var(--line); border-radius: 16px; background: var(--card); color: var(--ink); font: 600 13px var(--sans); cursor: pointer; }
+.fr-tabs button .fr-ti { font-size: 22px; line-height: 1; }
+.fr-tabs button b { position: absolute; top: 6px; right: 8px; font: 700 12px var(--sans); color: var(--mute); }
+.fr-tabs button.on { border-color: var(--gold); background: color-mix(in srgb, var(--gold) 14%, var(--card)); box-shadow: 0 2px 0 var(--gold); }
+.fr-search { width: 100%; box-sizing: border-box; min-height: 46px; font-size: 16px; margin-bottom: 10px; }
+.fr-chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+.fr-chip { min-height: 44px; padding: 0 14px; border: 1.5px solid var(--line); border-radius: 999px; background: var(--card); color: var(--ink); font: 600 14px var(--sans); cursor: pointer; }
+.fr-chip.on { border-color: var(--gold); background: color-mix(in srgb, var(--gold) 16%, var(--card)); }
+.fr-chip.add { }
+/* корпус приладу */
+.fr-unit { border: 2px solid var(--line); border-radius: 22px; padding: 6px 12px 12px; background: color-mix(in srgb, var(--card) 70%, #dfe9ee); }
+.fr-unit.fr-freezer { background: color-mix(in srgb, var(--card) 55%, #cfe3f2); }
+.fr-unit.fr-pantry { background: color-mix(in srgb, var(--card) 70%, #eadbc0); }
+.fr-shelf { padding: 10px 0 8px; border-bottom: 4px solid color-mix(in srgb, var(--line) 80%, #fff); }
+.fr-shelf:last-child { border-bottom: 0; }
+.fr-sl { font: 700 12px var(--sans); letter-spacing: .06em; text-transform: uppercase; color: var(--mute); margin: 0 2px 8px; }
+.fr-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.fr-t { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; min-height: 96px; padding: 10px 4px 8px; border: 1px solid var(--line); border-radius: 14px; background: var(--card); color: var(--ink); text-align: center; cursor: pointer; font-family: var(--sans); }
+.fr-t:active { transform: scale(.97); }
+.fr-t.old { border-color: var(--danger); }
+.fr-ic { display: grid; place-items: center; width: 36px; height: 36px; color: var(--gold); }
+.fr-ic svg { width: 28px; height: 28px; }
+.fr-n { font: 600 13px/1.2 var(--sans); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.fr-q { font: 500 12px var(--sans); color: var(--mute); }
+.fr-b { position: absolute; top: 4px; right: 4px; padding: 1px 6px; border-radius: 999px; font: 700 10px var(--sans); }
+.fr-b.soon { background: #f6dcae; color: #7a4a00; } .fr-b.bad { background: var(--danger); color: #fff; }
+@media (min-width: 560px) { .fr-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (min-width: 900px) { .fr-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
+/* дії */
+.fr-acts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.fr-act { min-height: 48px; padding: 8px 10px; border: 1.5px solid var(--line); border-radius: 14px; background: var(--card); color: var(--ink); font: 600 15px var(--sans); cursor: pointer; }
+.fr-act.pri { background: #2b1d14; color: #ffe9a8; border-color: #2b1d14; }
+.fr-seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.fr-seg button { min-height: 48px; border: 1.5px solid var(--line); border-radius: 12px; background: var(--card); color: var(--ink); font: 600 13px var(--sans); cursor: pointer; }
+.fr-seg button.on { border-color: var(--gold); background: color-mix(in srgb, var(--gold) 16%, var(--card)); }
+.fr-more { margin-top: 20px; } .fr-more summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; font-weight: 600; }
+.fr-more-in { display: grid; gap: 16px; margin-top: 12px; } .fr-more-in > .card { box-shadow: none; margin: 0 !important; }

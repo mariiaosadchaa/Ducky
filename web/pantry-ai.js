@@ -26,6 +26,12 @@
   async function run() {
     const text = draft.trim();
     if (text.length < 2) { msg = 'Напишіть, що змінити, наприклад: «купила 2 л молока, закінчився хліб».'; render(); return; }
+    const wipe = /(видал|прибер|очист|викин|спиш)\S*\s+(усі|всі|все|всю|повністю)?\s*(продукти|продуктів|комору|комору|їжу|все)\s*[.!]?$/i.test(text) || /^(очисти|видали|прибери)\s+комору\s*[.!]?$/i.test(text);
+    if (wipe) {
+      if (!state.products.length) { msg = 'Комора вже порожня.'; render(); return; }
+      pending = { actions: state.products.map((p) => ({ op: 'remove', id: p.id, reason: 'removed' })), notFound: [] }; off = new Set();
+      msg = 'Приберу всі продукти (' + state.products.length + '). Зніми галочки з тих, що лишити. Усе потрапить в «Архів», і зміну можна скасувати.'; render(); return;
+    }
     busy = true; msg = ''; pending = null; render();
     try {
       const res = await X.callApi('/api/edit-pantry', { text, today: todayISO(), products: state.products.map((p) => ({ id: p.id, name: p.name, qty: p.qty || '', weight: p.weight || '' })) });
@@ -127,12 +133,12 @@
   }
 
   function card() {
-    const ta = h('textarea', { rows: 2, placeholder: 'Напр.: купила 2 л молока і 10 яєць; видали сир; зʼїли 300 г курки; приготували борщ на 4 людей', 'aria-label': 'Що змінити в коморі', enterkeyhint: 'send', autocapitalize: 'sentences', style: 'width:100%;box-sizing:border-box;font-size:16px;min-height:64px' });
+    const ta = h('textarea', { rows: 2, placeholder: 'купила молоко 2 л; видали сир; приготували борщ на 4', 'aria-label': 'Що змінити в коморі', enterkeyhint: 'send', autocapitalize: 'sentences', style: 'width:100%;box-sizing:border-box;font-size:16px;min-height:56px' });
     ta.value = draft; ta.addEventListener('input', () => { draft = ta.value; });
     ta.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); draft = ta.value; run(); } });
     const rows = pending ? lines(pending) : [];
     return h('div', { class: 'card pa', style: 'margin-bottom:20px' }, h('div', { class: 'tag' }, 'Комора словами'),
-      h('p', { class: 'mute', style: 'margin:8px 0 10px' }, 'Пиши як є: що купила (можна цілим списком), що з\'їли чи закінчилось, що викинула. Або що приготували й на скільки людей: я підберу витрачені продукти. Спершу покажу зміни, а ти підтвердиш.'),
+      h('p', { class: 'mute', style: 'margin:8px 0 10px' }, 'Що купила, зʼїли, викинула чи приготували (і на скільки людей). Покажу зміни, ти підтвердиш.'),
       ta,
       h('div', { class: 'toolbar', style: 'margin-top:10px' }, h('button', { class: 'primary', type: 'button', style: 'min-height:46px;flex:1 1 auto', disabled: busy ? true : null, onclick: run }, busy ? 'Думаю…' : 'Показати зміни')),
       rows.length || (pending && (pending.notFound || []).length) ? h('div', { class: 'pa-prev' }, h('div', { class: 'tag', style: 'margin:12px 0 6px' }, 'Ось що зміниться'),

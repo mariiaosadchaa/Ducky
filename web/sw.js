@@ -1,7 +1,7 @@
 'use strict';
 // Service worker Ducky: мережа спершу, кеш як запасний варіант (офлайн).
 const CACHE = 'ducky-v21';
-const SHELL = ['./', 'index.html', 'styles.css', 'espresso.css', 'day.css', 'fx.js', 'app.js', 'extras.js', 'more.js', 'day.js', 'pantry-ai.js', 'config.js', 'vendor/supabase.js',
+const SHELL = ['./', 'index.html', 'styles.css', 'espresso.css', 'day.css', 'fridge.css', 'fx.js', 'app.js', 'extras.js', 'more.js', 'day.js', 'pantry-ai.js', 'fridge.js', 'config.js', 'vendor/supabase.js',
   'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png'];
 
 self.addEventListener('install', (e) => {
