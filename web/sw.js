@@ -18,10 +18,10 @@ self.addEventListener('fetch', (e) => {
   // API та Supabase ніколи не кешуємо
   if (url.origin !== location.origin || url.pathname.startsWith('/api/')) return;
   e.respondWith(
-    fetch(req).then((res) => {
+    fetch(req, { cache: 'no-cache' }).then((res) => {
       if (res && res.ok) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(req, copy)); }
       return res;
-    }).catch(() => caches.match(req).then((m) => m || caches.match('index.html'))));
+    }).catch(() => caches.match(req).then((m) => m || (req.mode === 'navigate' ? caches.match('index.html') : Response.error()))));
 });
 
 // Сповіщення від сервера (працюють, коли застосунок закритий)
