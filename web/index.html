@@ -18,6 +18,7 @@
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%20100%20100%22%3E%3Cpolygon%20points%3D%2212%2C62%2040%2C46%2064%2C52%2086%2C66%2056%2C80%2034%2C80%22%20fill%3D%22%23f7c948%22/%3E%3Cpolygon%20points%3D%2250%2C52%2058%2C30%2076%2C34%2070%2C52%22%20fill%3D%22%23f7c948%22/%3E%3Cpolygon%20points%3D%2240%2C46%2064%2C52%2040%2C72%22%20fill%3D%22%23fff%22%20opacity%3D%22.28%22/%3E%3Cpolygon%20points%3D%2212%2C62%2040%2C72%2034%2C80%22%20fill%3D%22%23000%22%20opacity%3D%22.18%22/%3E%3Cpolygon%20points%3D%2240%2C72%2056%2C80%2034%2C80%22%20fill%3D%22%23000%22%20opacity%3D%22.1%22/%3E%3Cpolygon%20points%3D%2258%2C30%2076%2C34%2064%2C44%22%20fill%3D%22%23fff%22%20opacity%3D%22.3%22/%3E%3Cpolygon%20points%3D%2274%2C36%2094%2C43%2074%2C48%22%20fill%3D%22%23f08a24%22/%3E%3Ccircle%20cx%3D%2267%22%20cy%3D%2239%22%20r%3D%222.4%22%20fill%3D%22%230b1220%22/%3E%3C/svg%3E">
 <link rel="stylesheet" href="styles.css">
 <link rel="stylesheet" href="espresso.css">
+<link rel="stylesheet" href="day.css">
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs>
@@ -46,11 +47,18 @@
   <svg class="wave w2" viewBox="0 0 2880 120" preserveAspectRatio="none"><path d="M0 60Q360 110 720 60T1440 60T2160 60T2880 60V120H0Z"/></svg>
   <svg class="wave w3" viewBox="0 0 2880 120" preserveAspectRatio="none"><path d="M0 70Q360 20 720 70T1440 70T2160 70T2880 70V120H0Z"/></svg>
 </footer>
+<script>
+// Якщо скрипт зламався (наприклад, після оновлення), показуємо коротке повідомлення з причиною замість «тихого» збою.
+(function(){var shown=false;function show(m){if(shown)return;shown=true;try{var d=document.createElement('div');d.setAttribute('role','alert');d.style.cssText='position:fixed;left:8px;right:8px;top:calc(8px + env(safe-area-inset-top));z-index:99999;background:#B5373F;color:#fff;font:600 13px/1.4 system-ui,sans-serif;padding:10px 12px;border-radius:12px;word-break:break-word';d.textContent='Помилка в застосунку: '+m+'. Закрий і відкрий застосунок ще раз, і надішли цей текст.';d.onclick=function(){d.remove();};(document.body||document.documentElement).appendChild(d);}catch(e){}}
+window.addEventListener('error',function(e){if(e&&e.message&&!/ResizeObserver/.test(e.message)){var f=(e.filename||'').split('/').pop();show(e.message+(f?' ('+f+':'+e.lineno+')':''));}});
+window.addEventListener('unhandledrejection',function(e){var r=e&&e.reason;var m=r&&r.message?r.message:String(r);if(/Load failed|Failed to fetch|NetworkError/i.test(m))return;show(m);});})();
+</script>
 <script src="fx.js"></script>
 <script src="vendor/supabase.js"></script>
 <script src="config.js"></script>
 <script src="app.js"></script>
 <script src="extras.js"></script>
 <script src="more.js"></script>
+<script src="day.js"></script>
 </body>
 </html>

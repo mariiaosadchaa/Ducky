@@ -992,6 +992,11 @@
       const byDate = Object.fromEntries(days.map((d) => [d.date, d]));
       const rank = (c) => (c.forced ? 0 : c.prio === 'high' ? 1 : 2);
       const cand = ((opts && opts.cand) || candidates(home, today, horizonEnd)).sort((a, b) => rank(a) - rank(b) || ((a.hi < a.lo ? 0 : diff(a.hi, a.lo)) - (b.hi < b.lo ? 0 : diff(b.hi, b.lo))) || b.minutes - a.minutes || (a.key < b.key ? -1 : 1));
+      // вільні години по днях (якщо задано): день із меншим вікном «важчий» за ту саму кількість хвилин
+      const capMap = (opts && opts.cap) || null;
+      const capVals = capMap ? days.map((d) => capMap[d.date]).filter((x) => x > 0) : [];
+      const capAvg = capVals.length ? capVals.reduce((x, y) => x + y, 0) / capVals.length : 0;
+      const wOf = (date) => (capAvg && capMap[date] > 0 ? capAvg / Math.max(15, capMap[date]) : 1);
       const unplaced = []; const waiting = []; const placedAt = {};
       const lookup = (key) => (/^c:/.test(key) ? (home.chores || []).find((x) => 'c:' + x.id === key) : (home.tasks || []).find((x) => 't:' + x.id === key));
       const dueSoon = (c) => c.due || c.lo;
@@ -1003,7 +1008,7 @@
         let best = null;
         for (let d = c.lo; d <= c.hi; d = addDays(d, 1)) {
           const day = byDate[d]; if (!day) continue;
-          let score = day.load + c.minutes;                                  // чим менше навантаження в дні, тим краще
+          let score = (day.load + c.minutes) * wOf(day.date);                // чим менше навантаження в дні (з огляду на його вільні години), тим краще
           score += Math.abs(diff(d, dueSoon(c))) * 2;                        // але не ближче до далекого строку без потреби
           if (c.room && day.items.some((x) => x.room === c.room)) score -= 6;   // прибирання кімнати разом
           if (!best || score < best.score) best = { day, score };
@@ -1022,7 +1027,7 @@
             if (it.fixed || it.after || dependedOn.has(it.key) || (it.forced && it.lo === it.hi)) continue;
             for (const tgt of days) {
               if (tgt === src || tgt.date < it.lo || tgt.date > it.hi) continue;
-              const gain = src.load - (tgt.load + it.minutes);      // > 0: після переносу в цільовому дні все одно легше, ніж було в початковому
+              const gain = src.load * wOf(src.date) - (tgt.load + it.minutes) * wOf(tgt.date);      // > 0: після переносу в цільовому дні все одно легше, ніж було в початковому
               if (gain <= 0) continue;
               if (!best || gain > best.gain) best = { src, tgt, it, gain };
             }
@@ -1056,7 +1061,8 @@
     // кілька людей: явні виконавці лишаються, решта ділиться порівну за часом; далі кожен розкладає свої справи по днях
     function planWeek(home, today, opts) {
       const people = peopleOf(home);
-      if (people.length < 2) return planOne(home, today, opts);
+      const capFor = (p) => (opts && opts.cap) || (root.DuckyPlan && typeof root.DuckyPlan.capHook === 'function' ? root.DuckyPlan.capHook(home, today, p) : null);
+      if (people.length < 2) return planOne(home, today, { ...opts, cap: capFor(null) });
       const n = (opts && opts.days) || 7; const horizonEnd = addDays(today, Math.max(n, LOOK) - 1);
       const cand = candidates(home, today, horizonEnd);
       const nm = (x) => String(x || '').trim().toLowerCase();
@@ -1078,7 +1084,7 @@
       const per = {};
       people.forEach((p) => {
         const mine = cand.filter((c) => owner.get(c.key) === p).map((c) => ({ ...c, who: p, auto: !explicit.has(c.key) }));
-        per[p] = planOne(home, today, { ...opts, cand: mine });
+        per[p] = planOne(home, today, { ...opts, cand: mine, cap: capFor(p) });
       });
       const days = per[people[0]].days.map((d, i) => {
         const items = []; const loads = {}; let ld = 0;
@@ -1099,7 +1105,7 @@
     // порожні пріоритети ніколи не вважаються «зміною»: інакше порожній стан, створений на іншому пристрої, перезаписував введене
     const priHas = (p) => !!p && !!(p.goal || (Array.isArray(p.t) && p.t.some((x) => x && x.t)));
     const priNorm = (p) => (priHas(p) ? p : null);
-    const settingsOf = (hm) => JSON.stringify([hm.hours || [], hm.fill !== false]);
+    const settingsOf = (hm) => JSON.stringify([hm.hours || [], hm.fill !== false, hm.win || null, hm.meals || null]);
     function stamp(hm, now) {
       if (!hm || typeof hm !== 'object') return;
       if (!hm.del || typeof hm.del !== 'object') hm.del = {};
@@ -1114,7 +1120,7 @@
         if (hm.known && Array.isArray(hm.known[c])) for (const id of hm.known[c]) if (!cur[c].includes(id) && !hm.del[id]) hm.del[id] = now;
       }
       hm.known = cur;
-      const sg = settingsOf(hm); if (hm.sh !== sg) { const first = hm.sh === undefined && sg === '[[],true]'; hm.sh = sg; if (!first) hm.smt = now; }
+      const sg = settingsOf(hm); if (hm.sh !== sg) { const first = hm.sh === undefined && sg === '[[],true,null,null]'; hm.sh = sg; if (!first) hm.smt = now; }
       // люди та їхні графіки: кожен графік зливається окремо, за часом зміни
       const prj = JSON.stringify(priNorm(hm.pri)); if (hm.prh !== prj) { const first = hm.prh === undefined && prj === 'null'; hm.prh = prj; if (!first) hm.prmt = now; }
       const pj = JSON.stringify(hm.people || []); if (hm.pph !== pj) { const first = hm.pph === undefined && pj === '[]'; hm.pph = pj; if (!first) hm.pmt = now; }
@@ -1147,13 +1153,15 @@
         for (const x of (Array.isArray(L[c]) ? L[c] : [])) { if (!x || !x.id) continue; const o = m.get(x.id); if (!o || (x.mt || 0) >= (o.mt || 0)) m.set(x.id, x); }
         out[c] = [...m.values()].filter((x) => !(del[x.id] && del[x.id] >= (x.mt || 0)));
       }
-      if ((R.smt || 0) > (L.smt || 0)) { out.hours = R.hours; out.fill = R.fill; out.sh = R.sh; out.smt = R.smt; }
+      if ((R.smt || 0) > (L.smt || 0)) { out.hours = R.hours; out.fill = R.fill; out.win = R.win; out.meals = R.meals; out.sh = R.sh; out.smt = R.smt; }
       const lg = { ...(R.lg || {}) };
       for (const key of Object.keys(L.lg || {})) { const a = L.lg[key]; const b = lg[key]; if (!b || a[1] >= b[1]) lg[key] = a; }
       out.lg = lg;
       const log = {};
       for (const key of Object.keys(lg)) if (lg[key][0] === 1) { const i = key.indexOf('|'); (log[key.slice(0, i)] || (log[key.slice(0, i)] = [])).push(key.slice(i + 1)); }
       out.log = log;
+      out.by = { ...(R.by || {}), ...(L.by || {}) };   // хто саме зробив: живе рівно доти, доки справа відмічена
+      for (const key of Object.keys(out.by)) { const r = lg[key]; if (!r || r[0] !== 1) delete out.by[key]; }
       out.hist = { ...(R.hist || {}), ...(L.hist || {}) };
       {   // пріоритети: новіший тиждень, далі той, де щось введено, далі новіший за часом
         const a = L.pri; const b = R.pri; const wa = (a && a.wk) || ''; const wb = (b && b.wk) || '';
@@ -1269,9 +1277,16 @@
 
     // ----- знімок плану на сьогодні: щоб список не стрибав, коли відмічаєш справи -----
     const sigOf = (hm) => JSON.stringify([hm.rooms.map((r) => [r.id, r.name]), hm.chores.map((c) => [c.id, c.who, c.who_once, c.after, c.title, c.room, c.every, c.minutes, c.must, c.wd, c.snooze, c.pin, c.carry]),
-      hm.rooms.length, hm.tasks.map((t) => [t.id, t.who, t.who_once, t.after, t.title, t.due, t.minutes, t.prio, t.room, t.snooze, t.every, t.wd, t.pin, t.carry, (t.subs || []).length]), hm.people || []]);
+      hm.rooms.length, hm.tasks.map((t) => [t.id, t.who, t.who_once, t.after, t.title, t.due, t.minutes, t.prio, t.room, t.snooze, t.every, t.wd, t.pin, t.carry, (t.subs || []).length]), hm.people || [], hm.win || null, hm.meals || null, state.menu || null]);
     const slim = (i) => ({ who: i.who, auto: i.auto, key: i.key, type: i.type, id: i.id, title: i.title, room: i.room, minutes: i.minutes, must: i.must, overdue: i.overdue, due: i.due, startMin: i.startMin, endMin: i.endMin });
     // день закінчився: зберігаємо його список (щоб можна було переглянути й відмітити забуте), а незроблене переходить на сьогодні
+    // виконавець береться з поточних даних, а не зі знімка: інакше передана справа лишається за старою людиною
+    const liveItem = (i) => {
+      const hm = HM(); const by = hm.by && hm.by[todayD() + '|' + i.key];
+      if (by && isDoneNow(i)) return { ...i, who: by, doneBy: by };
+      const s = findSrc(i); const w = s && (s.who_once || s.who);
+      return w && !isDoneNow(i) ? { ...i, who: w } : i;
+    };
     function archiveSnap(hm, today) {
       const old = hm.snap; if (!old || !old.date || old.date >= today) return;
       if (!hm.past || typeof hm.past !== 'object') hm.past = {};
@@ -1316,6 +1331,9 @@
       }
       const i = log.indexOf(item.key);
       if (on && i < 0) log.push(item.key); if (!on && i >= 0) log.splice(i, 1);
+      const by = hm.by || (hm.by = {}); const bk = date + '|' + item.key;
+      if (on) by[bk] = by[bk] || meName(); else delete by[bk];
+      for (const k of Object.keys(by)) if (k.slice(0, 10) < P.addDays(todayD(), -30)) delete by[k];
     }
     function tick(item, on) {
       markDone(item, on, todayD());
@@ -1394,6 +1412,14 @@
     function handoff(item, name, forever) {
       const x = findSrc(item); if (!x) return;
       const repeating = item.type === 'chore' || Number(x.every) > 0;
+      if (name !== null && (!item.date || item.date === todayD()) && isDoneNow(item)) {   // вже зроблена сьогодні: лишається зробленою, але переходить у список нового виконавця
+        const hm = HM(); const today = todayD();
+        (hm.by || (hm.by = {}))[today + '|' + item.key] = name;
+        if (hm.snap) hm.snap.items.forEach((si) => { if (si.key === item.key) si.who = name; });
+        if (!repeating || forever) { x.who = name; delete x.who_once; }
+        save(); render(); X.toast('Зараховано: ' + item.title + ' → ' + name);
+        return;
+      }
       if (name === null) { delete x.who_once; x.who = ''; }
       else if (repeating && !forever) x.who_once = name;
       else { x.who = name; delete x.who_once; }
@@ -1505,12 +1531,12 @@
           : h('p', { class: 'empty' }, 'Історія днів почала зберігатись від сьогодні, тому за цей день списку ще немає. Усе незроблене вже в плані на сьогодні.')];
     }
     function viewToday() {
-      const hm = HM(); const today = todayD(); const snap = todaySnap();
+      const hm = HM(); const today = todayD(); const snap = todaySnap(); const items = snap.items.map(liveItem);
       if (dayBack > 0) return viewPastDay(today);
       const plan = P.planWeek(hm, today);
-      const names = whoNames().filter((n) => snap.items.some((i) => i.who === n));
+      const names = whoNames().filter((n) => items.some((i) => i.who === n));
       if (whoFilter && !names.includes(whoFilter)) whoFilter = '';
-      const vis = multi() ? snap.items.filter(inView) : snap.items.filter((i) => !whoFilter || i.who === whoFilter || !i.who);
+      const vis = multi() ? items.filter(inView) : items.filter((i) => !whoFilter || i.who === whoFilter || !i.who);
       const open0 = vis.filter((i) => !isDoneNow(i)); const dn = vis.filter((i) => isDoneNow(i));
       // режим «мало сил»: лишаємо обовʼязкове й найкоротше, до півгодини
       const low = hm.low === today; let open = open0;
@@ -1524,9 +1550,9 @@
       const pct = total ? Math.round((doneMin / total) * 100) : 0;
       const empty = !hm.rooms.length && !hm.chores.length && !hm.tasks.length;
       // історія для серії
-      const must = snap.items.filter(isMustItem);
-      const entry = { p: snap.items.length, d: snap.items.filter(isDoneNow).length, mp: must.length, md: must.filter(isDoneNow).length };
-      if (multi()) { const w = {}; snap.items.forEach((i) => { const k = i.who || '—'; const e2 = w[k] || (w[k] = [0, 0]); e2[0]++; if (isDoneNow(i)) e2[1]++; }); entry.w = w; }
+      const must = items.filter(isMustItem);
+      const entry = { p: items.length, d: items.filter(isDoneNow).length, mp: must.length, md: must.filter(isDoneNow).length };
+      if (multi()) { const w = {}; items.forEach((i) => { const k = i.who || '—'; const e2 = w[k] || (w[k] = [0, 0]); e2[0]++; if (isDoneNow(i)) e2[1]++; }); entry.w = w; }
       if (!hm.hist) hm.hist = {};
       const prev = hm.hist[today];
       if (!prev || prev.p !== entry.p || prev.d !== entry.d || prev.mp !== entry.mp || prev.md !== entry.md || JSON.stringify(prev.w || null) !== JSON.stringify(entry.w || null)) {
@@ -1543,7 +1569,7 @@
             hidden ? h('p', { class: 'note', style: 'margin:10px 0 0' }, 'Сховано ' + hidden + ' (лишаються в розкладі).') : null)
           : h('p', { class: 'empty' }, empty ? 'Поки порожньо. Додай кімнати й справи у «Прибирання» та «Задачі», розклад складеться сам.' : 'На сьогодні нічого. Гарного відпочинку.'),
         !multi() && names.length > 1 ? h('div', { class: 'toolbar', style: 'margin-top:12px' }, h('span', { class: 'mute' }, 'Чиї справи:'), ['', ...names].map((n) => h('button', { class: n === whoFilter ? 'primary' : 'ghost', type: 'button', onclick: () => { whoFilter = n; render(); } }, n || 'Усі'))) : null,
-        snap.items.length && open0.length === 0 ? moreCard(plan, snap) : null,
+        items.length && open0.length === 0 ? moreCard(plan, snap) : null,
         h('div', { class: 'toolbar', style: 'margin-top:16px' },
           h('button', { class: low ? 'primary' : 'ghost', type: 'button', onclick: () => { hm.low = low ? null : today; save(); render(); } }, low ? 'Показати все' : 'Мало сил'),
           h('button', { class: 'ghost', type: 'button', onclick: () => { hm.snap = null; save(); render(); X.toast('Розклад на сьогодні перераховано'); } }, 'Перепланувати')),
@@ -2222,6 +2248,12 @@
           tips.length ? h('ul', { style: 'margin:8px 0 0;padding-left:18px' }, tips.map((x) => h('li', {}, x))) : h('p', { class: 'mute', style: 'margin:6px 0 0' }, 'Підказки зʼявляться, коли накопичиться кілька днів історії.'))];
     }
 
+    // Вхід для екрана «по годинах» (web/day.js)
+    window.DuckyHomeAPI = {
+      P, HM, todayD, todaySnap, inView, isDoneNow, tick, itemMenu, dayName, mins, roomName, meName, multi, people,
+      openShopCount: () => { try { const d = done(); return shoppingItems().filter((i) => !d[i.key]).length; } catch (e) { return 0; } },
+      oldToday: () => viewToday(),
+    };
     const clean = (fn) => () => fn().filter((x) => x != null && x !== false);
     Object.assign(VIEWS, { h_today: clean(viewToday), h_week: clean(viewWeek), h_clean: clean(viewClean), h_tasks: clean(viewTasks), h_time: clean(viewTime), h_stats: clean(viewStats) });
 
