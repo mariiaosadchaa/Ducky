@@ -963,7 +963,7 @@
           if (hi > horizonEnd) hi = horizonEnd;
           if (lo > hi) continue;
           out.push({ key: (c._t === 'task' ? 't:' : 'c:') + c.id + (k ? '#' + k : ''), type: c._t, id: c.id, title: c.title, room: c.room, minutes: Math.max(1, Number(c.minutes) || (c._t === 'task' ? 20 : 15)), must: !!c.must, due, overdue, lo, hi, fixed: fixedWd,
-            who: (k === 0 && c.who_once) || c.who || '', once: k === 0 && !!c.who_once, after: c.after || null, last: last, forced: pinned || !!c.must || overdue, step: c._t === 'task' ? 0 : stepOf(c.title), prio: c._t === 'task' ? (c.prio || 'norm') : 'norm', repeat: c._t === 'task' });
+            who: (k === 0 && c.who_once) || c.who || '', once: k === 0 && !!c.who_once, after: c.after || null, last: last, pinned, added: c.added || null, forced: pinned || !!c.must || overdue, step: c._t === 'task' ? 0 : stepOf(c.title), prio: c._t === 'task' ? (c.prio || 'norm') : 'norm', repeat: c._t === 'task' });
         }
       });
       (home.tasks || []).forEach((t) => {
@@ -973,13 +973,14 @@
         let lo = today; if (t.snooze && t.snooze > lo) lo = t.snooze;
         let hi = due ? (due < today ? today : due) : (t.prio === 'high' ? addDays(today, 1) : addDays(today, 13));
         if (carried && !(due && due > today)) hi = today;
+        if (!due && t.added === today) hi = today;      // додано сьогодні вручну й без дати: це задача на сьогодні
         if (hi > horizonEnd) hi = horizonEnd;
         let pinned = false;
         if (t.pin && t.pin >= today) { if (t.pin > horizonEnd) return; lo = t.pin; hi = t.pin; pinned = true; }
         if (hi < lo) hi = lo;
         if (lo > horizonEnd) return;
         out.push({ who: t.who_once || t.who || '', once: !!t.who_once, after: t.after || null, last: t.last || null, key: 't:' + t.id, type: 'task', id: t.id, title: t.title, room: t.room || null, minutes: Math.max(1, Number(t.minutes) || 20), must: false, due, overdue, lo, hi,
-          forced: pinned || overdue || (t.prio === 'high' && !!due && due <= horizonEnd && hi === lo), step: 0, prio: t.prio || 'norm' });
+          pinned, added: t.added || null, forced: pinned || overdue || (t.prio === 'high' && !!due && due <= horizonEnd && hi === lo), step: 0, prio: t.prio || 'norm' });
       });
       return out;
     }
@@ -1280,7 +1281,7 @@
     // ----- знімок плану на сьогодні: щоб список не стрибав, коли відмічаєш справи -----
     const sigOf = (hm) => JSON.stringify([hm.rooms.map((r) => [r.id, r.name]), hm.chores.map((c) => [c.id, c.who, c.who_once, c.after, c.title, c.room, c.every, c.minutes, c.must, c.wd, c.snooze, c.pin, c.carry]),
       hm.rooms.length, hm.tasks.map((t) => [t.id, t.who, t.who_once, t.after, t.title, t.due, t.minutes, t.prio, t.room, t.snooze, t.every, t.wd, t.pin, t.carry, (t.subs || []).length]), hm.people || [], hm.win || null, hm.meals || null, state.menu || null]);
-    const slim = (i) => ({ who: i.who, auto: i.auto, key: i.key, type: i.type, id: i.id, title: i.title, room: i.room, minutes: i.minutes, must: i.must, overdue: i.overdue, due: i.due, startMin: i.startMin, endMin: i.endMin });
+    const slim = (i) => ({ prio: i.prio, added: i.added, pinned: i.pinned, who: i.who, auto: i.auto, key: i.key, type: i.type, id: i.id, title: i.title, room: i.room, minutes: i.minutes, must: i.must, overdue: i.overdue, due: i.due, startMin: i.startMin, endMin: i.endMin });
     // день закінчився: зберігаємо його список (щоб можна було переглянути й відмітити забуте), а незроблене переходить на сьогодні
     // виконавець береться з поточних даних, а не зі знімка: інакше передана справа лишається за старою людиною
     const liveItem = (i) => {
@@ -1780,7 +1781,7 @@
             Object.assign(t, { title: title.value.trim(), due: ev ? null : (due.value || null), minutes: Math.max(1, Math.round(Number(minutes.value) || 30)), prio: prio.value, room: room.value || null, who: who.value.trim(), after: after.value || null,
               every: ev ? Math.max(1, Math.round(ev)) : null, wd: ev && wd.value !== '' ? Number(wd.value) : null, last: ev ? (last.value || null) : (t.last || null), done: ev ? false : t.done });
             const old = t.subs || []; t.subs = subsIn.value.split(/\r?\n/).map((x) => x.trim()).filter(Boolean).map((x) => ({ t: x, done: !!(old.find((o) => o.t === x) || {}).done }));
-            if (!task) hm.tasks.push(t); save(); closeFn(); render();
+            if (!task) { t.added = window.DuckyPlan.localISO(new Date()); hm.tasks.push(t); } save(); closeFn(); render();
           } }, 'Зберегти'),
           task ? h('button', { class: 'link', type: 'button', onclick: (e) => {
             if (!armed) { armed = true; e.target.textContent = 'Натисни ще раз, щоб видалити'; return; }
@@ -1833,7 +1834,7 @@
       const quick = h('input', { placeholder: 'Напр.: полити квіти 10 хв', enterkeyhint: 'done', autocomplete: 'off', 'aria-label': 'Нова задача' });
       const addQuick = () => {
         const v = quick.value.trim(); if (!v) return; const q = parseQuick(v);
-        hm.tasks.push({ id: uid(), title: q.title, due: q.due, minutes: q.minutes || 30, prio: q.prio, room: null, done: false, every: q.every, wd: q.wd, last: null });
+        hm.tasks.push({ id: uid(), title: q.title, due: q.due, minutes: q.minutes || 30, prio: q.prio, room: null, done: false, every: q.every, wd: q.wd, last: null, added: window.DuckyPlan.localISO(new Date()) });
         save(); render(); X.toast('Додано: ' + q.title + (q.every ? ' · ' + everyLabel(q.every) : q.due ? ' · до ' + dayName(q.due) : ''));
       };
       quick.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addQuick(); } });
@@ -2319,7 +2320,7 @@
         ? h('div', { style: 'display:grid;gap:12px' }, inp,
           h('p', { class: 'note', style: 'margin:0' }, 'Можна писати як говориш: «щодня», «щосереди», «завтра», «до 15.10», «20 хв», «важливо».'),
           h('div', { class: 'toolbar' }, h('button', { class: 'primary', type: 'button', onclick: () => {
-            const v = val(); if (!v) return; const q = window.DuckyQuick(v); const hm = state.home || (state.home = {}); (hm.tasks || (hm.tasks = [])).push({ id: uid(), title: q.title, due: q.due, minutes: q.minutes || 30, prio: q.prio, room: null, done: false, every: q.every, wd: q.wd, last: null });
+            const v = val(); if (!v) return; const q = window.DuckyQuick(v); const hm = state.home || (state.home = {}); (hm.tasks || (hm.tasks = [])).push({ id: uid(), title: q.title, added: window.DuckyPlan.localISO(new Date()), due: q.due, minutes: q.minutes || 30, prio: q.prio, room: null, done: false, every: q.every, wd: q.wd, last: null });
             done('Додано задачу: ' + q.title);
           } }, 'Додати задачу')))
         : h('div', { style: 'display:grid;gap:12px' }, inp,
@@ -2344,7 +2345,7 @@
       if (add) {
         if (to === 'shop') { const m = manual(); if (!m.some((x) => norm(x.name) === norm(add))) m.push({ id: uid(), name: add }); store.set('ducky.mode', 'kitchen'); state.tab = 'shop'; msg = 'У покупках: ' + add; }
         else if (to === 'pantry') { state.products.push({ id: uid(), name: add, qty: '', weight: '', store: '', price: null, bought: todayISO(), exp: null }); store.set('ducky.mode', 'kitchen'); state.tab = 'pantry'; msg = 'У коморі: ' + add; }
-        else { const q = window.DuckyQuick(add); const hm = state.home || (state.home = {}); (hm.tasks || (hm.tasks = [])).push({ id: uid(), title: q.title, due: q.due, minutes: q.minutes || 30, prio: q.prio, room: null, done: false, every: q.every, wd: q.wd, last: null }); store.set('ducky.mode', 'home'); state.tab = 'h_tasks'; msg = 'Додано задачу: ' + q.title; }
+        else { const q = window.DuckyQuick(add); const hm = state.home || (state.home = {}); (hm.tasks || (hm.tasks = [])).push({ id: uid(), title: q.title, added: window.DuckyPlan.localISO(new Date()), due: q.due, minutes: q.minutes || 30, prio: q.prio, room: null, done: false, every: q.every, wd: q.wd, last: null }); store.set('ducky.mode', 'home'); state.tab = 'h_tasks'; msg = 'Додано задачу: ' + q.title; }
         save();
       } else if (HT[go]) { store.set('ducky.mode', 'home'); state.tab = HT[go]; }
       else if (KT[go]) { store.set('ducky.mode', 'kitchen'); state.tab = KT[go]; }

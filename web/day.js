@@ -117,7 +117,16 @@
       if (s == null) { unplaced.push({ kind: 'my', key: 'my:' + m.id, title: m.title, minutes: dur, by: m.by, mine: m, reason: m.by != null ? 'не встигаю до ' + fmt(m.by) : 'не вмістилось у вільні години' }); continue; }
       put({ kind: 'my', key: 'my:' + m.id, title: m.title, start: s, end: s + dur, by: m.by, mine: m });
     }
-    for (const it of inp.items || []) {
+    // Пріоритет справ: 1 призначене на цей день уручну (додане сьогодні, з терміном на сьогодні, закріплене), 2 обовʼязкове й важливе,
+    // 3 звичайне, 4 перенесене з минулого. Усередині групи лишається порядок планувальника (кімнати, пил → підлога).
+    const rank = (it) => {
+      if (it.pinned || (it.type === 'task' && inp.date && (it.added === inp.date || it.due === inp.date))) return 1;
+      if (it.must || it.prio === 'high') return 2;
+      if (it.overdue) return 4;
+      return 3;
+    };
+    const ordered = (inp.items || []).map((it, i) => ({ it, i, r: rank(it) })).sort((a, b) => a.r - b.r || a.i - b.i).map((x) => x.it);
+    for (const it of ordered) {
       const dur = Math.max(5, Math.round(Number(it.minutes) || 15));
       let s = firstFit(free, dur, cursor);
       if (s == null) s = firstFit(free, dur, null);            // дірка раніше курсора
@@ -191,7 +200,7 @@
     const cnt = A.openShopCount();
     const list = listOf(hm, date);
     const myTasks = list.calc ? list.items.map((x) => ({ id: x.id, title: x.title, minutes: (x.ai && !x.userMin ? x.ai.minutes : x.minutes), done: !!x.done, by: x.by ? D.toMin(x.by) : null, order: x.ai ? x.ai.order : null, pref: x.ai ? x.ai.part : null, note: x.ai ? x.ai.note : '', aiMin: !!(x.ai && !x.userMin) })) : [];
-    const r = D.scheduleDay({ wins, cooks: cooksFor(hm, wd), shop: sd === date ? { minutes: D.SHOP_MIN, count: cnt } : null, items: open, mine: myTasks, now });
+    const r = D.scheduleDay({ wins, cooks: cooksFor(hm, wd), shop: sd === date ? { minutes: D.SHOP_MIN, count: cnt } : null, items: open, mine: myTasks, now, date });
     const myDone = list.items.filter((x) => x.done);
     return { ...r, date, idx, wd, doneItems, myDone, list, now, hasWins: wins.length > 0 };
   }
