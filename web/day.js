@@ -162,15 +162,20 @@
 
   const personKey = (p) => p || A.meName() || (user && user.name) || 'me';
   const winOf = (hm, p) => { const all = hm.win && typeof hm.win === 'object' ? hm.win : {}; return all[personKey(p)] || null; };
+  // вільні вікна на конкретну дату: окреме налаштування на дату (hm.winOn) або шаблон дня тижня
+  const winsOn = (hm, date, person) => {
+    const o = hm.winOn && hm.winOn[personKey(person) + '|' + date]; const wd = P.wdOf(date);
+    return Array.isArray(o) ? D.windowsOf({ [wd]: o }, wd) : D.windowsOf(winOf(hm, person), wd);
+  };
   const mealsOf = (hm) => ({ ...D.DEFAULT_MEALS, ...(hm.meals || {}) });
   const cooksFor = (hm, wd) => D.cooksOf(state.menu, state.recipes, mealsOf(hm), wd, TECH);
 
   // планувальник справ дізнається, скільки вільних хвилин у кожного дня
   P.capHook = (hm, today, person) => {
-    const win = winOf(hm, person); const cap = {};
+    const cap = {};
     for (let i = 0; i < 28; i++) {
       const date = P.addDays(today, i); const wd = P.wdOf(date);
-      cap[date] = D.capacityOf(D.windowsOf(win, wd), cooksFor(hm, wd), false);
+      cap[date] = D.capacityOf(winsOn(hm, date, person), cooksFor(hm, wd), false);
     }
     return cap;
   };
@@ -178,10 +183,10 @@
   // у який із найближчих 3 днів іти в магазин: де найбільше вільного часу
   function shopDate(hm, today) {
     if (!A.openShopCount()) return null;
-    const win = winOf(hm); let best = null;
+    let best = null;
     for (let i = 0; i < 3; i++) {
       const date = P.addDays(today, i); const wd = P.wdOf(date);
-      const free = D.capacityOf(D.windowsOf(win, wd), cooksFor(hm, wd), false) - (i === 0 ? 0 : 0);
+      const free = D.capacityOf(winsOn(hm, date, null), cooksFor(hm, wd), false);
       if (!best || free > best.free + 30) best = { date, free };
     }
     return best.date;
@@ -189,7 +194,7 @@
 
   function build(date) {
     const hm = A.HM(); const today = A.todayD(); const idx = P.diff(date, today);
-    const wd = P.wdOf(date); const wins = D.windowsOf(winOf(hm), wd);
+    const wd = P.wdOf(date); const wins = winsOn(hm, date, null);
     const plan = P.planWeek(hm, today);
     const src = idx === 0 ? A.todaySnap().items : ((plan.days[idx] || { items: [] }).items);
     const mine = src.filter(A.inView);
@@ -364,7 +369,7 @@
       if (!aiOn) { rw.items.forEach((x) => { delete x.ai; }); save(); finish(''); return; }
       const btn = ev && ev.currentTarget; if (btn) { btn.disabled = true; btn.textContent = 'ШІ думає…'; }
       try {
-        const wd = P.wdOf(date); const wins = D.windowsOf(winOf(hm), wd).map((w) => [D.fmt(w[0]), D.fmt(w[1])]);
+        const wins = winsOn(hm, date, null).map((w) => [D.fmt(w[0]), D.fmt(w[1])]);
         const nowD = new Date(); const nowS = r.idx === 0 ? D.fmt(nowD.getHours() * 60 + nowD.getMinutes()) : null;
         const res = await X.callApi('/api/plan-day', { date, now: nowS, windows: wins,
           tasks: rw.items.filter((x) => !x.done).map((x) => ({ id: x.id, title: x.title, minutes: x.userMin ? x.minutes : null, by: x.by })) });
@@ -389,6 +394,87 @@
         stale ? h('span', { class: 'mute' }, 'Список змінено: розрахуй, щоб він з’явився в розкладі') : null));
   }
 
+  // ----- текстові команди для розкладу -----
+  let cmdDraft = ''; let cmdBusy = false; let cmdMsg = ''; let cmdPending = null; let cmdUndo = null;
+  const hmText = (arr) => (arr && arr.length ? arr.map((w) => w.s + '–' + w.e).join(', ') : 'немає вільних годин');
+  const dlabel = (iso) => (iso === A.todayD() ? 'сьогодні' : A.dayName(iso));
+  function cmdItems(r) {
+    const out = new Map();
+    for (const b of r.blocks) if (b.item && (b.kind === 'chore' || b.kind === 'task')) out.set(b.item.key, { ref: b.item.key, kind: 'plan', title: b.title, minutes: b.end - b.start, item: b.item });
+    for (const u of r.unplaced) if (u.item) out.set(u.item.key, { ref: u.item.key, kind: 'plan', title: u.title, minutes: u.minutes, item: u.item });
+    for (const x of r.list.items) if (!x.done) out.set('my:' + x.id, { ref: 'my:' + x.id, kind: 'my', title: x.title, minutes: x.minutes, by: x.by || null, mine: x });
+    return out;
+  }
+  function cmdLines(res, r) {
+    const items = cmdItems(r); const out = [];
+    for (const a of res.actions) {
+      const it = items.get(a.ref);
+      if (a.op === 'add') out.push({ sign: '+', cls: 'pa-add', text: 'Додати (' + dlabel(a.date) + '): ' + a.title + (a.minutes ? ' · ' + dur(a.minutes) : '') + (a.by ? ' · до ' + a.by : '') });
+      else if (a.op === 'remove' && it) out.push({ sign: '−', cls: 'pa-rm', text: 'Прибрати: ' + it.title });
+      else if (a.op === 'edit' && it) out.push({ sign: '✎', cls: 'pa-up', text: 'Змінити: ' + it.title + ' → ' + [a.title, a.minutes && dur(a.minutes), a.by === '' ? 'без терміну' : a.by && 'до ' + a.by].filter(Boolean).join(' · ') });
+      else if (a.op === 'move' && it) out.push({ sign: '→', cls: 'pa-up', text: 'Перенести: ' + it.title + ' → ' + dlabel(a.date) });
+      else if (a.op === 'done' && it) out.push({ sign: '✓', cls: 'pa-add', text: 'Зроблено: ' + it.title });
+      else if (a.op === 'hours') out.push({ sign: '⏱', cls: 'pa-up', text: 'Вільні години (' + dlabel(a.date) + '): ' + hmText(a.windows) });
+    }
+    return out;
+  }
+  async function cmdRun(r) {
+    const text = cmdDraft.trim();
+    if (text.length < 2) { cmdMsg = 'Напишіть, що змінити, наприклад: «перенеси прибирання на завтра».'; render(); return; }
+    cmdBusy = true; cmdMsg = ''; cmdPending = null; render();
+    try {
+      const hm = A.HM(); const nowD = new Date();
+      const tasks = [...cmdItems(r).values()].map((t) => ({ ref: t.ref, kind: t.kind, title: t.title, minutes: t.minutes, by: t.by || null }));
+      const res = await X.callApi('/api/plan-edit', { text, today: A.todayD(), date: r.date, now: D.fmt(nowD.getHours() * 60 + nowD.getMinutes()),
+        windows: winsOn(hm, r.date, null).map((w) => [D.fmt(w[0]), D.fmt(w[1])]), tasks });
+      cmdPending = { res, date: r.date };
+      if (!cmdLines(res, r).length && !(res.unclear || []).length) { cmdPending = null; cmdMsg = 'Не знайшла змін для розкладу.'; }
+    } catch (e) { cmdMsg = e.message; }
+    cmdBusy = false; render();
+  }
+  function cmdApply(r) {
+    if (!cmdPending) return;
+    const hm = A.HM(); const today = A.todayD(); const items = cmdItems(r);
+    const snap = JSON.parse(JSON.stringify(state.home));
+    let n = 0; const skipped = [];
+    for (const a of cmdPending.res.actions) {
+      const it = items.get(a.ref);
+      if (a.op === 'add') { const rw = listRW(hm, a.date); rw.items.push({ id: 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), title: a.title, minutes: a.minutes || 20, userMin: !!a.minutes, by: a.by || null, done: false }); rw.calc = true; n++; }
+      else if (a.op === 'remove' && it && it.mine) { const rw = listRW(hm, r.date); rw.items = rw.items.filter((y) => y.id !== it.mine.id); n++; }
+      else if (a.op === 'edit' && it && it.mine) { if (a.title) it.mine.title = a.title; if (a.minutes) { it.mine.minutes = a.minutes; it.mine.userMin = true; } if (a.by !== undefined) it.mine.by = a.by || null; delete it.mine.ai; n++; }
+      else if (a.op === 'move' && it && it.item) { if (A.pinQuiet(it.item, a.date)) n++; else skipped.push(it.title); }
+      else if (a.op === 'done' && it) { if (it.mine) { it.mine.done = true; n++; } else if (r.idx === 0 && it.item) { A.markDoneQuiet(it.item); n++; } else skipped.push(it.title + ' (відмітити можна лише сьогодні)'); }
+      else if (a.op === 'hours') {
+        if (!hm.winOn || typeof hm.winOn !== 'object') hm.winOn = {};
+        hm.winOn[personKey() + '|' + a.date] = a.windows;
+        const cut = P.addDays(today, -14); for (const k of Object.keys(hm.winOn)) if (k.split('|')[1] < cut) delete hm.winOn[k];
+        n++;
+      }
+    }
+    hm.snap = null; save(); cmdUndo = snap; cmdPending = null; cmdDraft = '';
+    cmdMsg = 'Готово: змін ' + n + '.' + (skipped.length ? ' Не вдалося: ' + skipped.join(', ') + '.' : '');
+    render();
+  }
+  function cmdCard(r) {
+    const ta = h('textarea', { rows: 2, placeholder: 'Напр.: перенеси прибирання на завтра, додай подзвонити в банк до 14:00', 'aria-label': 'Що змінити в розкладі', enterkeyhint: 'send', autocapitalize: 'sentences', style: 'width:100%;box-sizing:border-box;font-size:16px;min-height:64px' });
+    ta.value = cmdDraft; ta.addEventListener('input', () => { cmdDraft = ta.value; });
+    ta.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); cmdDraft = ta.value; cmdRun(r); } });
+    const rows = cmdPending && cmdPending.date === r.date ? cmdLines(cmdPending.res, r) : [];
+    const unclear = cmdPending && cmdPending.date === r.date ? (cmdPending.res.unclear || []) : [];
+    return h('div', { class: 'card pa', style: 'margin-bottom:14px' }, h('div', { class: 'tag' }, 'Змінити розклад словами'),
+      h('p', { class: 'mute', style: 'margin:8px 0 10px' }, 'Напиши, що перенести, додати, прибрати чи відмітити, або що сьогодні вільна лише до певної години. Я покажу зміни, а ти підтвердиш.'),
+      ta,
+      h('div', { class: 'toolbar', style: 'margin-top:10px' }, h('button', { class: 'primary', type: 'button', style: 'min-height:46px;flex:1 1 auto', disabled: cmdBusy ? true : null, onclick: () => cmdRun(r) }, cmdBusy ? 'Думаю…' : 'Показати зміни')),
+      rows.length || unclear.length ? h('div', { class: 'pa-prev' }, h('div', { class: 'tag', style: 'margin:12px 0 6px' }, 'Ось що зміниться'),
+        h('ul', { class: 'pa-list' }, rows.map((x) => h('li', { class: x.cls }, h('b', {}, x.sign), h('span', {}, x.text)))),
+        unclear.length ? h('p', { class: 'note', style: 'margin:6px 0' }, 'Не зрозуміла: ' + unclear.join('; ') + '.') : null,
+        h('div', { class: 'toolbar', style: 'margin-top:10px' },
+          rows.length ? h('button', { class: 'primary', type: 'button', style: 'min-height:46px', onclick: () => cmdApply(r) }, 'Застосувати') : null,
+          h('button', { class: 'ghost', type: 'button', style: 'min-height:46px', onclick: () => { cmdPending = null; render(); } }, 'Скасувати'))) : null,
+      cmdMsg ? h('p', { class: 'note', role: 'status', style: 'margin:10px 0 0' }, cmdMsg) : null,
+      cmdUndo && !cmdPending ? h('button', { class: 'link', type: 'button', style: 'min-height:44px', onclick: () => { state.home = cmdUndo; cmdUndo = null; cmdMsg = 'Останню зміну скасовано.'; save(); render(); } }, 'Скасувати останню зміну') : null);
+  }
+
   function viewPlan() {
     const hm = A.HM(); const today = A.todayD();
     if (!selDate || selDate < today || P.diff(selDate, today) > 6) selDate = today;
@@ -396,7 +482,7 @@
     const isToday = r.idx === 0;
     const pct = r.freeTotal ? Math.min(100, Math.round((r.busy / r.freeTotal) * 100)) : 0;
     const summary = !r.hasWins ? 'У цей день немає вільних годин.' : (r.blocks.length ? r.blocks.length + ' ' + (r.blocks.length === 1 ? 'блок' : 'блоків') + ' · зайнято ' + dur(r.busy) + ' із ' + dur(r.freeTotal) + ' вільних' : 'Нічого не заплановано. Вільно ' + dur(r.freeTotal) + '.');
-    return [...header('Дім · ' + A.dayName(selDate, true), 'Мій день по', 'годинах'), strip(today), nextCard(r), listCard(r),
+    return [...header('Дім · ' + A.dayName(selDate, true), 'Мій день по', 'годинах'), strip(today), nextCard(r), listCard(r), cmdCard(r),
       h('div', { class: 'card tl-sum' }, h('div', { class: 'mute', style: 'margin-bottom:10px' }, summary), dayMap(r),
         h('div', { class: 'tl-legend' }, [['dm-win', 'вільно'], ['dm-my', 'мої задачі'], ['dm-cook', 'готування'], ['dm-chore', 'справи'], ['dm-task', 'задачі'], ['dm-shop', 'магазин']].map(([c, t]) => h('span', {}, h('i', { class: 'dm-seg-i ' + c }), t)))),
       r.hasWins ? h('div', { class: 'tl' }, timeline(r)) : h('p', { class: 'empty' }, 'Додай вільні години, і я розкладу справи по годинах.'),
