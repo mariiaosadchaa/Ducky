@@ -70,3 +70,7 @@
 .dl-rep { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
 .dl-rep select { min-height: 44px; font-size: 16px; flex: 1; }
 .mng-in > .card + .card { border-top: 1px solid var(--line); padding-top: 14px; }
+
+/* iOS (встановлений застосунок): нижнє меню й «+» не мають «їздити» під час прокрутки */
+#nav, .fab { transform: translate3d(0, 0, 0); -webkit-transform: translate3d(0, 0, 0); will-change: transform; -webkit-backface-visibility: hidden; backface-visibility: hidden; }
+.bg, #sparks { contain: strict; }
