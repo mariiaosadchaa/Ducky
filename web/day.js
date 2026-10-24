@@ -192,8 +192,28 @@
     return best.date;
   }
 
+  // повторювані задачі: hm.recur = [{id,title,minutes,by,days:[0..6],start,mt,off}]; у список дня вони потрапляють один раз
+  const RDAYS = { daily: [0, 1, 2, 3, 4, 5, 6], weekdays: [0, 1, 2, 3, 4], weekends: [5, 6] };
+  const RLABEL = { daily: 'щодня', weekdays: 'по буднях', weekends: 'по вихідних' };
+  function ensureRecur(hm, date) {
+    const rc = Array.isArray(hm.recur) ? hm.recur.filter((x) => x && !x.off && Array.isArray(x.days)) : [];
+    if (!rc.length || date < A.todayD()) return;
+    const wd = P.wdOf(date); let changed = false;
+    for (const x of rc) {
+      if (!x.days.includes(wd) || (x.start && date < x.start)) continue;
+      const had = hm.dayList && hm.dayList[date] && Array.isArray(hm.dayList[date].items) && hm.dayList[date].items.length;
+      const rw = listRW(hm, date); if (!rw.rec) rw.rec = [];
+      if (rw.rec.includes(x.id)) continue;
+      rw.rec.push(x.id);
+      rw.items.push({ id: 'r' + x.id + date.replace(/-/g, ''), title: x.title, minutes: x.minutes, userMin: true, by: x.by || null, done: false, rid: x.id });
+      if (!had) rw.calc = true;
+      changed = true;
+    }
+    if (changed) queueMicrotask(() => save());
+  }
   function build(date) {
     const hm = A.HM(); const today = A.todayD(); const idx = P.diff(date, today);
+    ensureRecur(hm, date);
     const wd = P.wdOf(date); const wins = winsOn(hm, date, null);
     const plan = P.planWeek(hm, today);
     const src = idx === 0 ? A.todaySnap().items : ((plan.days[idx] || { items: [] }).items);
@@ -342,7 +362,7 @@
   }
 
   // картка «Задачі на день» з кнопкою «Розрахувати»
-  let draftTitle = ''; let draftMin = ''; let draftBy = '';
+  let draftTitle = ''; let draftMin = ''; let draftBy = ''; let draftRep = '';
   function listCard(r) {
     const hm = A.HM(); const date = r.date; const l = listOf(hm, date);
     const open = l.items.filter((x) => !x.done);
@@ -354,7 +374,22 @@
       const q = parseTask(title.value); if (!q.title) { title.focus(); return; }
       const rw = listRW(hm, date);
       rw.items.push({ id: 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), title: q.title, minutes: Math.max(5, Number(mins.value) || q.minutes || 20), userMin: !!(Number(mins.value) || q.minutes), by: by.value || q.by || null, done: false });
-      rw.calc = false; draftTitle = ''; draftMin = ''; draftBy = ''; save(); render();
+      const it = rw.items[rw.items.length - 1];
+      if (draftRep && RDAYS[draftRep]) {
+        if (!Array.isArray(hm.recur)) hm.recur = [];
+        const rid = 'rc' + Date.now().toString(36) + Math.random().toString(36).slice(2, 4);
+        hm.recur.push({ id: rid, title: it.title, minutes: it.minutes, by: it.by, days: RDAYS[draftRep].slice(), start: date, mt: Date.now() });
+        it.rid = rid; (rw.rec || (rw.rec = [])).push(rid);
+      }
+      rw.calc = false; draftTitle = ''; draftMin = ''; draftBy = ''; draftRep = ''; save(); render();
+    };
+    const rep = h('select', { 'aria-label': 'Повторювати', onchange: (e) => { draftRep = e.target.value; } },
+      [['', 'Не повторювати'], ['daily', 'Щодня'], ['weekdays', 'По буднях'], ['weekends', 'По вихідних']].map(([v, t]) => h('option', { value: v, selected: draftRep === v ? true : null }, t)));
+    const recs = (Array.isArray(hm.recur) ? hm.recur : []).filter((x) => x && !x.off);
+    const kill = (x) => {
+      x.off = true; x.mt = Date.now(); const td = A.todayD();
+      for (const [d, rw2] of Object.entries(hm.dayList || {})) if (d >= td && rw2 && Array.isArray(rw2.items)) rw2.items = rw2.items.filter((y) => !(y.rid === x.id && !y.done));
+      save(); render();
     };
     title.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } });
     const stale = open.length > 0 && !l.calc;
@@ -388,10 +423,14 @@
       title,
       h('div', { class: 'dl-row' }, h('label', {}, h('span', { class: 'mute' }, 'Хвилин'), mins), h('label', {}, h('span', { class: 'mute' }, 'Виконати до'), by),
         h('button', { class: 'ghost', type: 'button', onclick: add }, '+ Додати')),
+      h('label', { class: 'dl-rep' }, h('span', { class: 'mute' }, 'Повторювати'), rep),
       h('div', { class: 'toolbar', style: 'margin-top:12px' },
         h('button', { class: stale || (open.length && !l.calc) ? 'primary' : 'ghost', type: 'button', disabled: open.length ? null : true, onclick: calc }, l.calc && open.length ? 'Розрахувати знову' : 'Розрахувати'),
         h('label', { class: 'dl-ai' }, h('input', { type: 'checkbox', checked: aiOn ? true : null, onchange: (e) => { store.set(AI_KEY, e.target.checked ? '1' : ''); render(); } }), h('span', {}, 'Розумний розрахунок (ШІ)')),
-        stale ? h('span', { class: 'mute' }, 'Список змінено: розрахуй, щоб він з’явився в розкладі') : null));
+        stale ? h('span', { class: 'mute' }, 'Список змінено: розрахуй, щоб він з’явився в розкладі') : null),
+      recs.length ? h('details', { style: 'margin-top:12px' }, h('summary', { style: 'min-height:44px;display:flex;align-items:center;cursor:pointer' }, 'Повторювані задачі: ' + recs.length),
+        h('ul', { class: 'dl-list' }, recs.map((x) => h('li', {}, h('span', { class: 'dl-t' }, x.title, h('span', { class: 'mute' }, ' · ' + (Object.keys(RDAYS).find((k) => RDAYS[k].join() === x.days.join()) ? RLABEL[Object.keys(RDAYS).find((k) => RDAYS[k].join() === x.days.join())] : 'в обрані дні') + (x.by ? ' · до ' + x.by : ''))),
+          h('button', { class: 'link', type: 'button', 'aria-label': 'Більше не повторювати: ' + x.title, onclick: () => kill(x) }, '✕'))))) : null);
   }
 
   // ----- текстові команди для розкладу -----
@@ -475,6 +514,63 @@
       cmdUndo && !cmdPending ? h('button', { class: 'link', type: 'button', style: 'min-height:44px', onclick: () => { state.home = cmdUndo; cmdUndo = null; cmdMsg = 'Останню зміну скасовано.'; save(); render(); } }, 'Скасувати останню зміну') : null);
   }
 
+  // ----- календар iPhone (.ics) зі справжніми годинами блоків -----
+  const icsEsc = (t) => String(t || '').replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n');
+  function icsFor(dates) {
+    const out = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Ducky//Day//UK', 'CALSCALE:GREGORIAN'];
+    const stamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z';
+    const hhmm = (m) => String(Math.floor(m / 60) % 24).padStart(2, '0') + String(m % 60).padStart(2, '0') + '00';
+    let n = 0;
+    for (const date of dates) {
+      let r; try { r = build(date); } catch (e) { continue; }
+      for (const b of r.blocks) {
+        const ymd = date.replace(/-/g, ''); const it = b.item;
+        const rn = it && it.room ? A.roomName(it.room) : '';
+        const note = b.kind === 'cook' && b.passive ? 'Готово ~' + D.fmt(b.readyAt) : (b.kind === 'my' && b.by != null ? 'Виконати до ' + D.fmt(b.by) : 'Ducky');
+        out.push('BEGIN:VEVENT', 'UID:' + (b.kind + b.start + b.title).replace(/[^a-z0-9а-яіїєґ]/gi, '').slice(0, 40) + '-' + ymd + '@ducky', 'DTSTAMP:' + stamp,
+          'DTSTART:' + ymd + 'T' + hhmm(b.start), 'DTEND:' + ymd + 'T' + hhmm(Math.min(b.end, 24 * 60 - 1)),
+          'SUMMARY:' + icsEsc(ICON[b.kind] + ' ' + b.title), rn ? 'LOCATION:' + icsEsc(rn) : null, 'DESCRIPTION:' + icsEsc(note),
+          'BEGIN:VALARM', 'ACTION:DISPLAY', 'DESCRIPTION:' + icsEsc(b.title), 'TRIGGER:-PT10M', 'END:VALARM', 'END:VEVENT'); n++;
+      }
+    }
+    out.push('END:VCALENDAR'); return { text: out.filter(Boolean).join('\r\n'), n };
+  }
+  function saveFile(name, text, type) {
+    const url = URL.createObjectURL(new Blob([text], { type }));
+    const a = h('a', { href: url, download: name }); document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 4000);
+  }
+  // старий тижневий розклад «Дім» теж тепер віддає справжні години
+  window.DuckyICS = (days) => icsFor(days.map((d) => d.date)).text;
+  function exportDays(dates, name) {
+    const r = icsFor(dates);
+    if (!r.n) { X.toast('У цей період немає блоків із годинами. Додай вільні години.'); return; }
+    saveFile(name, r.text, 'text/calendar'); X.toast('Відкрий файл і обери «Додати все» у Календар (' + r.n + ' подій)');
+  }
+  // нагадування «через N хв» для push: [{k,t,b,date,min}]
+  D.remind = function (lead) {
+    const out = []; const today = A.todayD(); const L = Math.max(1, Math.min(60, Number(lead) || 10));
+    for (let i = 0; i < 2; i++) {
+      const date = P.addDays(today, i); let r; try { r = build(date); } catch (e) { continue; }
+      for (const b of r.blocks) {
+        const at = b.start - L; if (at < 0) continue;
+        if (r.idx === 0 && r.now != null && at <= r.now) continue;
+        out.push({ k: 'blk|' + date + '|' + b.kind + '|' + b.start + '|' + b.title.length, t: ICON[b.kind] + ' Через ' + L + ' хв', b: b.title + ' · ' + D.fmt(b.start) + '–' + D.fmt(b.end), date, min: at });
+      }
+    }
+    return out.slice(0, 30);
+  };
+
+  let mngOpen = null;
+  function manageCard(r) {
+    const l = listOf(A.HM(), r.date);
+    const calculated = l.calc && r.blocks.some((b) => b.kind === 'my');
+    const open = mngOpen === null ? !calculated : mngOpen;
+    const n = l.items.filter((x) => !x.done).length;
+    return h('details', { class: 'card mng', open: open ? true : null, ontoggle: (e) => { mngOpen = e.target.open; } },
+      h('summary', { style: 'min-height:44px;display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:600' }, 'Керувати днем', h('span', { class: 'mute', style: 'font-weight:400' }, n ? ' · задач: ' + n : ' · додати задачі, змінити розклад')),
+      h('div', { class: 'mng-in' }, listCard(r), cmdCard(r)));
+  }
+
   function viewPlan() {
     const hm = A.HM(); const today = A.todayD();
     if (!selDate || selDate < today || P.diff(selDate, today) > 6) selDate = today;
@@ -482,7 +578,7 @@
     const isToday = r.idx === 0;
     const pct = r.freeTotal ? Math.min(100, Math.round((r.busy / r.freeTotal) * 100)) : 0;
     const summary = !r.hasWins ? 'У цей день немає вільних годин.' : (r.blocks.length ? r.blocks.length + ' ' + (r.blocks.length === 1 ? 'блок' : 'блоків') + ' · зайнято ' + dur(r.busy) + ' із ' + dur(r.freeTotal) + ' вільних' : 'Нічого не заплановано. Вільно ' + dur(r.freeTotal) + '.');
-    return [...header('Дім · ' + A.dayName(selDate, true), 'Мій день по', 'годинах'), strip(today), nextCard(r), listCard(r), cmdCard(r),
+    return [...header('Дім · ' + A.dayName(selDate, true), 'Мій день по', 'годинах'), strip(today), nextCard(r), manageCard(r),
       h('div', { class: 'card tl-sum' }, h('div', { class: 'mute', style: 'margin-bottom:10px' }, summary), dayMap(r),
         h('div', { class: 'tl-legend' }, [['dm-win', 'вільно'], ['dm-my', 'мої задачі'], ['dm-cook', 'готування'], ['dm-chore', 'справи'], ['dm-task', 'задачі'], ['dm-shop', 'магазин']].map(([c, t]) => h('span', {}, h('i', { class: 'dm-seg-i ' + c }), t)))),
       r.hasWins ? h('div', { class: 'tl' }, timeline(r)) : h('p', { class: 'empty' }, 'Додай вільні години, і я розкладу справи по годинах.'),
@@ -498,7 +594,9 @@
       h('div', { class: 'toolbar tl-tools' },
         h('button', { class: 'primary', type: 'button', onclick: hoursSheet }, 'Мої вільні години'),
         h('button', { class: 'ghost', type: 'button', onclick: () => { hm.snap = null; save(); render(); X.toast('Розклад перераховано'); } }, 'Перепланувати'),
-        h('button', { class: 'ghost', type: 'button', onclick: () => { store.set(LIST_KEY, '1'); render(); } }, 'Списком'))];
+        h('button', { class: 'ghost', type: 'button', onclick: () => { store.set(LIST_KEY, '1'); render(); } }, 'Списком'),
+        h('button', { class: 'ghost', type: 'button', onclick: () => exportDays([selDate], 'ducky-' + selDate + '.ics') }, 'У Календар: день'),
+        h('button', { class: 'ghost', type: 'button', onclick: () => exportDays(Array.from({ length: 7 }, (_, i) => P.addDays(today, i)), 'ducky-tyzhden.ics') }, 'У Календар: тиждень'))];
   }
 
   const oldToday = VIEWS.h_today;

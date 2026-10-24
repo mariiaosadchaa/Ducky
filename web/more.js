@@ -1166,6 +1166,7 @@
       for (const key of Object.keys(out.by)) { const r = lg[key]; if (!r || r[0] !== 1) delete out.by[key]; }
       out.hist = { ...(R.hist || {}), ...(L.hist || {}) };
       out.dayList = { ...(R.dayList || {}), ...(L.dayList || {}) };
+      { const m = new Map(); for (const x of (R.recur || []).concat(L.recur || [])) { if (!x || !x.id) continue; const o = m.get(x.id); if (!o || (x.mt || 0) >= (o.mt || 0)) m.set(x.id, x); } out.recur = [...m.values()]; }   // повторювані задачі на день
       out.winOn = { ...(R.winOn || {}), ...(L.winOn || {}) };   // вільні години на конкретну дату   // списки задач на день: по датах
       {   // пріоритети: новіший тиждень, далі той, де щось введено, далі новіший за часом
         const a = L.pri; const b = R.pri; const wa = (a && a.wk) || ''; const wb = (b && b.wk) || '';
@@ -1281,7 +1282,7 @@
 
     // ----- знімок плану на сьогодні: щоб список не стрибав, коли відмічаєш справи -----
     const sigOf = (hm) => JSON.stringify([hm.rooms.map((r) => [r.id, r.name]), hm.chores.map((c) => [c.id, c.who, c.who_once, c.after, c.title, c.room, c.every, c.minutes, c.must, c.wd, c.snooze, c.pin, c.carry]),
-      hm.rooms.length, hm.tasks.map((t) => [t.id, t.who, t.who_once, t.after, t.title, t.due, t.minutes, t.prio, t.room, t.snooze, t.every, t.wd, t.pin, t.carry, (t.subs || []).length]), hm.people || [], hm.win || null, hm.winOn || null, hm.meals || null, state.menu || null]);
+      hm.rooms.length, hm.tasks.map((t) => [t.id, t.who, t.who_once, t.after, t.title, t.due, t.minutes, t.prio, t.room, t.snooze, t.every, t.wd, t.pin, t.carry, (t.subs || []).length]), hm.people || [], hm.win || null, hm.winOn || null, hm.recur || null, hm.meals || null, state.menu || null]);
     const slim = (i) => ({ prio: i.prio, added: i.added, pinned: i.pinned, who: i.who, auto: i.auto, key: i.key, type: i.type, id: i.id, title: i.title, room: i.room, minutes: i.minutes, must: i.must, overdue: i.overdue, due: i.due, startMin: i.startMin, endMin: i.endMin });
     // день закінчився: зберігаємо його список (щоб можна було переглянути й відмітити забуте), а незроблене переходить на сьогодні
     // виконавець береться з поточних даних, а не зі знімка: інакше передана справа лишається за старою людиною
@@ -1989,7 +1990,10 @@
           out.push({ k: id + '|' + d.date, t: 'Дім 🦆', b: fillMsg(pool[(dn + off) % pool.length], left, { all: base.length }), at });
         }
       });
-      return out.filter((i) => i.at > 0);
+      if (R.blocks && window.DuckyDay && window.DuckyDay.remind) {   // нагадування «через N хв» про блоки розкладу по годинах
+        try { for (const x of window.DuckyDay.remind(R.blkLead || 10)) if (!isQuiet(x.date, R)) out.push({ k: x.k, t: x.t, b: x.b, at: kyivAt(x.date, x.min) }); } catch (e) { /* не критично */ }
+      }
+      return out.filter((i) => i.at > now - 15 * 60000);
     };
     // похвала, коли закрито все на сьогодні
     function praiseCheck() {
@@ -2030,6 +2034,10 @@
         slot('День: чи все гаразд', 'midday', 'timeMid', '14:00'),
         slot('Вечір: що лишилось', 'evening', 'timeEve', '20:00'),
         h('p', { class: 'note', style: 'margin:6px 0 0' }, 'Час за київським часом.'),
+        chk('Нагадувати про кожен блок розкладу по годинах', R.blocks, 'blocks'),
+        h('div', { class: 'toolbar', style: 'margin-top:8px;align-items:center' }, h('span', { class: 'mute' }, 'За скільки хвилин до початку:'),
+          h('select', { 'aria-label': 'За скільки хвилин нагадувати', style: 'width:90px', onchange: (e) => { remSave({ blkLead: Number(e.target.value) }); say('Нагадаю за ' + e.target.value + ' хв'); } },
+            [5, 10, 15, 30].map((n) => h('option', { value: n, selected: Number(R.blkLead || 10) === n ? true : null }, String(n))))),
         chk('Хвалити, коли всі справи на день зроблено', R.praise, 'praise'),
         chk('Не писати зранку, якщо справ на день немає', R.skipEmpty, 'skipEmpty'),
         h('div', { class: 'toolbar', style: 'margin-top:12px;align-items:center' }, h('span', { class: 'mute' }, 'Максимум повідомлень на день:'), max),

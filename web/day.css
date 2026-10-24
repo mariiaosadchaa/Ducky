@@ -64,3 +64,9 @@
 .pa-list li { display:flex; gap:10px; align-items:flex-start; padding:8px 0; border-bottom:1px solid var(--line); font:500 15px/1.4 var(--sans); }
 .pa-list li b { flex:none; width:22px; text-align:center; font-size:18px; }
 .pa-add b { color:#2f7a55; } .pa-rm b { color:var(--danger); } .pa-up b { color:var(--gold); }
+.mng { margin-bottom: 14px; padding-bottom: 8px; }
+.mng-in { display: grid; gap: 14px; margin-top: 10px; }
+.mng-in > .card { box-shadow: none; margin: 0 !important; background: transparent; border: 0; padding: 0 2px; overflow: visible; }
+.dl-rep { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.dl-rep select { min-height: 44px; font-size: 16px; flex: 1; }
+.mng-in > .card + .card { border-top: 1px solid var(--line); padding-top: 14px; }

@@ -10,6 +10,9 @@ try {
   const src = fs.readFileSync(file, 'utf8');
   const out = src.replace(/const CACHE = '[^']*';/, "const CACHE = 'ducky-" + sha.slice(0, 10) + "';");
   if (out !== src) fs.writeFileSync(file, out);
+  const idx = path.join(__dirname, 'web', 'index.html'); const hs = fs.readFileSync(idx, 'utf8');
+  const ho = hs.replace(/window\.DUCKY_BUILD='[^']*'/, "window.DUCKY_BUILD='" + sha.slice(0, 10) + "'");
+  if (ho !== hs) fs.writeFileSync(idx, ho);
   console.log('stamp-version: ducky-' + sha.slice(0, 10));
 } catch (e) { console.log('stamp-version: пропущено (' + e.message + ')'); }
 process.exit(0);

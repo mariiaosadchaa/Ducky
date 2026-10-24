@@ -54,6 +54,7 @@
 window.addEventListener('error',function(e){if(e&&e.message&&!/ResizeObserver/.test(e.message)){var f=(e.filename||'').split('/').pop();show(e.message+(f?' ('+f+':'+e.lineno+')':''));}});
 window.addEventListener('unhandledrejection',function(e){var r=e&&e.reason;var m=r&&r.message?r.message:String(r);if(/Load failed|Failed to fetch|NetworkError/i.test(m))return;show(m);});})();
 </script>
+<script>window.DUCKY_BUILD='dev';</script>
 <script src="fx.js"></script>
 <script src="vendor/supabase.js"></script>
 <script src="config.js"></script>
@@ -63,5 +64,6 @@ window.addEventListener('unhandledrejection',function(e){var r=e&&e.reason;var m
 <script src="day.js"></script>
 <script src="pantry-ai.js"></script>
 <script src="fridge.js"></script>
+<script src="shop-stores.js"></script>
 </body>
 </html>

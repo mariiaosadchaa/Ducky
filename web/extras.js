@@ -646,10 +646,14 @@
       if (loadedV === null) { loadedV = v; return; }
       if (v !== loadedV) showUpdate();
     }
+    // версія коду, який зараз виконується, береться з index.html (її підставляє Vercel); якщо застосунок запустився зі старого кешу, вона не збігнеться з sw.js на сервері
+    const builtV = window.DUCKY_BUILD && window.DUCKY_BUILD !== 'dev' ? 'ducky-' + window.DUCKY_BUILD : null;
+    if (builtV) loadedV = builtV;
     readV().then((v) => { if (loadedV === null) loadedV = v; });
     document.addEventListener('visibilitychange', () => { if (!document.hidden) check(); });
-    window.addEventListener('focus', check);
-    setInterval(check, 5 * 60000);
+    window.addEventListener('focus', check); window.addEventListener('pageshow', check); window.addEventListener('online', check);
+    setTimeout(check, 3000);
+    setInterval(check, 3 * 60000);
     if ('serviceWorker' in navigator) {
       const hadController = !!navigator.serviceWorker.controller;
       navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadController) setTimeout(check, 300); });
