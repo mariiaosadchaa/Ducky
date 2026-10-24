@@ -837,6 +837,7 @@
     rows.push(item(dark ? 'Світла тема' : 'Темна тема', () => btn('themeBtn').click()));
     if (btn('installBtn') && !btn('installBtn').hidden) rows.push(item('Встановити застосунок', () => btn('installBtn').click()));
     if (store.get('ducky.mode') !== 'home') rows.push(item('Профіль і налаштування', () => { state.tab = 'profile'; saveLocal(); render(); }));
+    rows.push(item(store.get('ducky.mode') === 'home' ? 'Перейти на кухню' : 'Перейти в «Дім»', () => btn('modeBtn').click()));
     rows.push(item('Вийти', () => btn('logoutBtn').click()));
     closeFn = X.openModal('Налаштування', h('div', { class: 'sheet' }, rows));
   }
@@ -1163,6 +1164,7 @@
       out.by = { ...(R.by || {}), ...(L.by || {}) };   // хто саме зробив: живе рівно доти, доки справа відмічена
       for (const key of Object.keys(out.by)) { const r = lg[key]; if (!r || r[0] !== 1) delete out.by[key]; }
       out.hist = { ...(R.hist || {}), ...(L.hist || {}) };
+      out.dayList = { ...(R.dayList || {}), ...(L.dayList || {}) };   // списки задач на день: по датах
       {   // пріоритети: новіший тиждень, далі той, де щось введено, далі новіший за часом
         const a = L.pri; const b = R.pri; const wa = (a && a.wk) || ''; const wb = (b && b.wk) || '';
         let takeR;

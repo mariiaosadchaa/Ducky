@@ -56,3 +56,11 @@
 .dl-row input { height:46px; min-height:46px; font-size:16px; box-sizing:border-box; width:100%; }
 .dl-row button { height:46px; flex:1 1 100%; }
 @media (min-width:480px) { .dl-row button { flex:0 0 auto; } }
+
+.dl-ai { display:flex; align-items:center; gap:10px; min-height:44px; font:500 14px var(--sans); width:100%; }
+.dl-ai input { width:22px; height:22px; accent-color:var(--gold); }
+/* поле «Скажи Ducky» */
+.pa-list { list-style:none; margin:0; padding:0; }
+.pa-list li { display:flex; gap:10px; align-items:flex-start; padding:8px 0; border-bottom:1px solid var(--line); font:500 15px/1.4 var(--sans); }
+.pa-list li b { flex:none; width:22px; text-align:center; font-size:18px; }
+.pa-add b { color:#2f7a55; } .pa-rm b { color:var(--danger); } .pa-up b { color:var(--gold); }
