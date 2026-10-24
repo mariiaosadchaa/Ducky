@@ -9,6 +9,7 @@
   const fmt = (m) => pad(Math.floor(m / 60) % 24) + ':' + pad(m % 60);
   const BUF = 5;            // пауза між блоками, хв
   const MIN_SLOT = 5;
+  const PART = { morning: [0, 12 * 60], day: [12 * 60, 17 * 60], evening: [17 * 60, 24 * 60] };
   const DEFAULT_COOK = 30;  // оцінка, якщо у рецепта немає хвилин
   const SHOP_MIN = 45;
 
@@ -108,11 +109,11 @@
     const area0 = now != null ? carve(free, 0, now) : free;
     free = area0;
     // 2б. власний список на день: спершу з терміном «до» (за зростанням), далі без терміну, у порядку списку
-    const mine = (inp.mine || []).filter((x) => !x.done).map((x, i) => ({ ...x, ord: i }))
+    const mine = (inp.mine || []).filter((x) => !x.done).map((x, i) => ({ ...x, ord: x.order != null ? x.order : i + 0.5 }))
       .sort((a, b) => (a.by == null) - (b.by == null) || ((a.by || 0) - (b.by || 0)) || a.ord - b.ord);
     for (const m of mine) {
       const dur = Math.max(5, Math.round(Number(m.minutes) || 20));
-      const s = firstFit(free, dur, null, null, m.by);
+      const s = firstFit(free, dur, null, PART[m.pref] || null, m.by);
       if (s == null) { unplaced.push({ kind: 'my', key: 'my:' + m.id, title: m.title, minutes: dur, by: m.by, mine: m, reason: m.by != null ? 'не встигаю до ' + fmt(m.by) : 'не вмістилось у вільні години' }); continue; }
       put({ kind: 'my', key: 'my:' + m.id, title: m.title, start: s, end: s + dur, by: m.by, mine: m });
     }
@@ -147,6 +148,7 @@
   const TECH = /мультивар|хлібопіч/i;
   const WDN = ['Понеділок', 'Вівторок', 'Середа', 'Четвер', 'Пʼятниця', 'Субота', 'Неділя'];
   const LIST_KEY = 'ducky.todayList';
+  const AI_KEY = 'ducky.aiPlan';
   let selDate = null;
 
   const personKey = (p) => p || A.meName() || (user && user.name) || 'me';
@@ -188,7 +190,7 @@
     const sd = shopDate(hm, today);
     const cnt = A.openShopCount();
     const list = listOf(hm, date);
-    const myTasks = list.calc ? list.items.map((x) => ({ id: x.id, title: x.title, minutes: x.minutes, done: !!x.done, by: x.by ? D.toMin(x.by) : null })) : [];
+    const myTasks = list.calc ? list.items.map((x) => ({ id: x.id, title: x.title, minutes: (x.ai && !x.userMin ? x.ai.minutes : x.minutes), done: !!x.done, by: x.by ? D.toMin(x.by) : null, order: x.ai ? x.ai.order : null, pref: x.ai ? x.ai.part : null, note: x.ai ? x.ai.note : '', aiMin: !!(x.ai && !x.userMin) })) : [];
     const r = D.scheduleDay({ wins, cooks: cooksFor(hm, wd), shop: sd === date ? { minutes: D.SHOP_MIN, count: cnt } : null, items: open, mine: myTasks, now });
     const myDone = list.items.filter((x) => x.done);
     return { ...r, date, idx, wd, doneItems, myDone, list, now, hasWins: wins.length > 0 };
@@ -242,6 +244,8 @@
     }
     if (b.kind === 'shop') sub.push(b.count + ' поз.');
     if (b.kind === 'my' && b.by != null) sub.push('до ' + D.fmt(b.by));
+    if (b.kind === 'my' && b.mine && b.mine.note) sub.push('ШІ: ' + b.mine.note);
+    if (b.kind === 'my' && b.mine && b.mine.aiMin) sub.push('~час за оцінкою ШІ');
     if (it && it.room) { const rn = A.roomName(it.room); if (rn) sub.push(rn); }
     if (it && A.multi() && it.who) sub.push(it.who);
     if (it && (it.must || it.overdue)) sub.push(it.overdue ? 'з минулого' : 'обовʼязково');
@@ -335,15 +339,32 @@
     const add = () => {
       const q = parseTask(title.value); if (!q.title) { title.focus(); return; }
       const rw = listRW(hm, date);
-      rw.items.push({ id: 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), title: q.title, minutes: Math.max(5, Number(mins.value) || q.minutes || 20), by: by.value || q.by || null, done: false });
+      rw.items.push({ id: 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), title: q.title, minutes: Math.max(5, Number(mins.value) || q.minutes || 20), userMin: !!(Number(mins.value) || q.minutes), by: by.value || q.by || null, done: false });
       rw.calc = false; draftTitle = ''; draftMin = ''; draftBy = ''; save(); render();
     };
     title.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } });
     const stale = open.length > 0 && !l.calc;
-    const calc = () => {
-      const rw = listRW(hm, date); rw.calc = true; save(); const rr = build(date);
+    const aiOn = store.get(AI_KEY) === '1';
+    const finish = (msg) => {
+      const rr = build(date);
       const bad = rr.unplaced.filter((u) => u.kind === 'my').length; const ok = rr.blocks.filter((b) => b.kind === 'my').length;
-      render(); X.toast(bad ? 'Розподілено ' + ok + ', не вмістилось ' + bad : 'Розподілено: ' + ok);
+      render(); X.toast((msg ? msg + ' ' : '') + (bad ? 'Розподілено ' + ok + ', не вмістилось ' + bad : 'Розподілено: ' + ok));
+    };
+    const calc = async (ev) => {
+      const rw = listRW(hm, date); rw.calc = true;
+      if (!aiOn) { rw.items.forEach((x) => { delete x.ai; }); save(); finish(''); return; }
+      const btn = ev && ev.currentTarget; if (btn) { btn.disabled = true; btn.textContent = 'ШІ думає…'; }
+      try {
+        const wd = P.wdOf(date); const wins = D.windowsOf(winOf(hm), wd).map((w) => [D.fmt(w[0]), D.fmt(w[1])]);
+        const nowD = new Date(); const nowS = r.idx === 0 ? D.fmt(nowD.getHours() * 60 + nowD.getMinutes()) : null;
+        const res = await X.callApi('/api/plan-day', { date, now: nowS, windows: wins,
+          tasks: rw.items.filter((x) => !x.done).map((x) => ({ id: x.id, title: x.title, minutes: x.userMin ? x.minutes : null, by: x.by })) });
+        const by = new Map(res.tasks.map((t) => [t.id, t]));
+        rw.items.forEach((x) => { const t = by.get(x.id); if (t) x.ai = { minutes: t.minutes, part: t.part, order: t.order, note: t.note, aiMin: !x.userMin }; else delete x.ai; });
+        save(); finish('');
+      } catch (e) {
+        rw.items.forEach((x) => { delete x.ai; }); save(); finish('ШІ недоступний (' + e.message + '). Розрахувала без нього.');
+      }
     };
     return h('div', { class: 'card dl' }, h('div', { class: 'tag' }, 'Задачі на день'),
       open.length ? h('ul', { class: 'dl-list' }, open.map((x) => h('li', {},
@@ -355,6 +376,7 @@
         h('button', { class: 'ghost', type: 'button', onclick: add }, '+ Додати')),
       h('div', { class: 'toolbar', style: 'margin-top:12px' },
         h('button', { class: stale || (open.length && !l.calc) ? 'primary' : 'ghost', type: 'button', disabled: open.length ? null : true, onclick: calc }, l.calc && open.length ? 'Розрахувати знову' : 'Розрахувати'),
+        h('label', { class: 'dl-ai' }, h('input', { type: 'checkbox', checked: aiOn ? true : null, onchange: (e) => { store.set(AI_KEY, e.target.checked ? '1' : ''); render(); } }), h('span', {}, 'Розумний розрахунок (ШІ)')),
         stale ? h('span', { class: 'mute' }, 'Список змінено: розрахуй, щоб він з’явився в розкладі') : null));
   }
 
