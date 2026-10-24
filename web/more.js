@@ -1165,7 +1165,8 @@
       out.by = { ...(R.by || {}), ...(L.by || {}) };   // хто саме зробив: живе рівно доти, доки справа відмічена
       for (const key of Object.keys(out.by)) { const r = lg[key]; if (!r || r[0] !== 1) delete out.by[key]; }
       out.hist = { ...(R.hist || {}), ...(L.hist || {}) };
-      out.dayList = { ...(R.dayList || {}), ...(L.dayList || {}) };   // списки задач на день: по датах
+      out.dayList = { ...(R.dayList || {}), ...(L.dayList || {}) };
+      out.winOn = { ...(R.winOn || {}), ...(L.winOn || {}) };   // вільні години на конкретну дату   // списки задач на день: по датах
       {   // пріоритети: новіший тиждень, далі той, де щось введено, далі новіший за часом
         const a = L.pri; const b = R.pri; const wa = (a && a.wk) || ''; const wb = (b && b.wk) || '';
         let takeR;
@@ -1280,7 +1281,7 @@
 
     // ----- знімок плану на сьогодні: щоб список не стрибав, коли відмічаєш справи -----
     const sigOf = (hm) => JSON.stringify([hm.rooms.map((r) => [r.id, r.name]), hm.chores.map((c) => [c.id, c.who, c.who_once, c.after, c.title, c.room, c.every, c.minutes, c.must, c.wd, c.snooze, c.pin, c.carry]),
-      hm.rooms.length, hm.tasks.map((t) => [t.id, t.who, t.who_once, t.after, t.title, t.due, t.minutes, t.prio, t.room, t.snooze, t.every, t.wd, t.pin, t.carry, (t.subs || []).length]), hm.people || [], hm.win || null, hm.meals || null, state.menu || null]);
+      hm.rooms.length, hm.tasks.map((t) => [t.id, t.who, t.who_once, t.after, t.title, t.due, t.minutes, t.prio, t.room, t.snooze, t.every, t.wd, t.pin, t.carry, (t.subs || []).length]), hm.people || [], hm.win || null, hm.winOn || null, hm.meals || null, state.menu || null]);
     const slim = (i) => ({ prio: i.prio, added: i.added, pinned: i.pinned, who: i.who, auto: i.auto, key: i.key, type: i.type, id: i.id, title: i.title, room: i.room, minutes: i.minutes, must: i.must, overdue: i.overdue, due: i.due, startMin: i.startMin, endMin: i.endMin });
     // день закінчився: зберігаємо його список (щоб можна було переглянути й відмітити забуте), а незроблене переходить на сьогодні
     // виконавець береться з поточних даних, а не зі знімка: інакше передана справа лишається за старою людиною
@@ -2256,6 +2257,8 @@
       P, HM, todayD, todaySnap, inView, isDoneNow, tick, itemMenu, dayName, mins, roomName, meName, multi, people,
       openShopCount: () => { try { const d = done(); return shoppingItems().filter((i) => !d[i.key]).length; } catch (e) { return 0; } },
       oldToday: () => viewToday(),
+      pinQuiet: (item, date) => { if (/#/.test(item.key)) return false; const x = findSrc(item); if (!x) return false; x.pin = date; delete x.snooze; delete x.carry; return true; },
+      markDoneQuiet: (item) => markDone(item, true, todayD()),
     };
     const clean = (fn) => () => fn().filter((x) => x != null && x !== false);
     Object.assign(VIEWS, { h_today: clean(viewToday), h_week: clean(viewWeek), h_clean: clean(viewClean), h_tasks: clean(viewTasks), h_time: clean(viewTime), h_stats: clean(viewStats) });
